@@ -47,11 +47,11 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 
 ## Features
 
-### Direct COROS Integration & OAuth 2.0 / MCP Support
-- **Dual Authentication Architecture**:
-  - **Official OAuth 2.0 / MCP (Recommended)**: Connect via COROS Model Context Protocol (`mcp.coros.com`) with PKCE and Bearer tokens. Zero password entry required.
-  - **Direct HTTPS Sync (Legacy)**: Connects directly with `teamapi.coros.com` on-device without intermediary servers.
-- Fetches real-time workout telemetry: distance, pace, elevation, cadence, training load, aerobic/anaerobic TE, and cadence.
+### Direct On-Device COROS Integration
+- **Direct HTTPS Authentication**: Connects directly and securely with official COROS Training Hub endpoints (`teamapi.coros.com`) strictly on-device. Zero middleman cloud relays, zero external telemetry.
+- **Why Direct Auth?**: COROS does not currently offer a public consumer OAuth 2.0 portal for independent mobile applications (its enterprise Partner API and MCP OAuth server enforce HTTPS redirect URIs and pre-registered enterprise client credentials). Laps handles all authentication directly from your device, storing credentials exclusively in Android's private sandbox.
+- **Advanced Token Support**: Developers who maintain an active COROS Model Context Protocol (MCP) Bearer token can optionally authenticate via raw token.
+- Fetches real-time workout telemetry: distance, pace, elevation, cadence, training load, aerobic/anaerobic TE, and heart rate.
 - Synchronizes EvoLab metrics: Marathon Level, Lactate Threshold Pace & HR, Running Fitness, Fatigue, and Load Impact.
 
 ### Zero-Setup Google Calendar Sync
@@ -90,10 +90,12 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 ## Setup
 
 1. **Download & Install**: Grab the signed APK from the [Releases](https://github.com/coderang-gk/Laps/releases) page.
-   - **SHA-256 (v1.0.0)**: `6f0057eed0e3100acbb94246fd17c444e8c948f808db0fdad2d8e8a6bc685e90`
-2. **Permissions**: Grant Calendar and Notification permissions when prompted so Laps can read your training schedule and update completed runs.
-3. **Connect Account**: Open **Settings** (top right gear icon) and connect via **COROS OAuth 2.0 / MCP Bearer Token** (recommended) or direct account login.
-4. **Choose Calendar**: Select the Google Calendar you use for training runs.
+   - **SHA-256 (v1.0.0)**: `1e00a5715dc2e9ad7ddc94b03278509c34117b8ad203f5fc70c549e140dd77e6`
+2. **Permissions**: Grant Calendar (optional) and Notification permissions when prompted so Laps can read your training schedule and update completed runs.
+3. **Connect Account**: Open **Settings** and connect via **Direct Login** (or paste an optional MCP Bearer token).
+4. **Choose Mode**:
+   - **Metrics Only (Default)**: Keep calendar set to *"None (Metrics Only)"* to use Laps purely for glanceable home screen widgets.
+   - **Training Plan Mode**: Select your Google Calendar if you wish to generate 80/20 structured workout plans and track upcoming runs.
 5. **(Optional) Gemini Key**: If you wish to enable extended AI coaching commentary on missed runs, paste your Gemini API key in Settings.
 
 ---
@@ -152,9 +154,20 @@ Laps adopts a Canta-inspired hermetic testing architecture. All business logic, 
 
 ## Privacy & Security
 
-- **Zero Cloud Intermediaries**: Laps contains no analytics trackers, advertising SDKs, or third-party telemetries.
-- **Direct Auth**: Requests originate directly from your device to COROS (`teamapi.coros.com` / `mcp.coros.com`) over HTTPS.
-- **Local Sandboxing**: All credentials and OAuth tokens are stored in Android private app storage. No local storage scheme is completely impenetrable (such as on compromised/rooted devices); for maximum peace of mind, we recommend using the **COROS OAuth 2.0 Bearer token** path which keeps your password completely off-device.
+- **Zero Cloud Intermediaries**: Laps has zero analytics trackers, zero advertising SDKs, and zero telemetry relays. All network requests originate directly from your phone to official COROS endpoints over encrypted TLS/HTTPS.
+- **Local On-Device Sandboxing**: All session tokens and credentials are stored exclusively in Android private app storage (`MODE_PRIVATE`). No third-party app on your device can access Laps's private files.
+- **One-Tap Atomic Sign-Out**: Tapping **Clear Credentials / Sign Out** in Settings instantly purges all tokens, passwords, Gemini keys, and cached training metrics from disk and memory.
+
+---
+
+## Disclaimers & Known Limitations
+
+> [!WARNING]
+> **Independent Project**: Laps is an independent, community-developed open-source project. It is **not** affiliated with, authorized, maintained, or endorsed by COROS Wearables Inc. or Google LLC.
+
+* **API Stability**: Because COROS does not provide a public, documented consumer REST API or self-serve OAuth portal for third-party mobile applications, Laps interacts directly with official Training Hub endpoints on-device. Upstream endpoint changes by COROS could disrupt synchronization.
+* **Local Storage Disclosure**: While Android's private app sandbox protects credentials via Linux UID separation, no local storage mechanism is completely impervious to physical access on rooted or compromised devices. Avoid using the app on rooted phones with insecure superuser configurations.
+* **Android Battery Optimization Policies**: Many device manufacturers (Samsung One UI, Xiaomi HyperOS, OnePlus OxygenOS) aggressively terminate background workers to save battery. For uninterrupted 3-hour widget updates, set Laps battery usage to **Unrestricted** in Android *App Info > Battery*.
 
 ---
 
@@ -162,7 +175,7 @@ Laps adopts a Canta-inspired hermetic testing architecture. All business logic, 
 
 - [x] Autonomous silent background sync via Android `WorkManager` (v1.0)
 - [x] Adaptive Missed-Workout Resolution (Skip & Shift heuristics with Google Calendar title rewrites) (v1.0)
-- [x] Dual-mode authentication (OAuth 2.0 Bearer Token + Direct Login) (v1.0)
+- [x] First-class Metrics Only mode (Widgets without mandatory calendar training plans) (v1.0)
 - [ ] Direct-to-Watch structured workout push via COROS Partner API / MCP write tools (v1.1)
 - [ ] IzzyOnDroid & F-Droid repository distribution (v1.1)
 
