@@ -5,6 +5,8 @@
   <p>100% on-device. No cloud relays, no server requirements, no Google developer console setup.</p>
 
   <p>
+    <a href="#overview">Overview</a> •
+    <a href="#screenshots">Screenshots</a> •
     <a href="#features">Features</a> •
     <a href="#setup">Setup</a> •
     <a href="#widgets">Widgets</a> •
@@ -24,6 +26,36 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 - Reads and updates planned runs straight through Android's native `CalendarContract`.
 - Builds periodized 80/20 training schedules and writes workouts to your calendar in one tap.
 - Analyzes training load, fatigue, and missed workouts locally using an EvoLab physiological engine, with optional BYO Gemini AI reasoning.
+
+---
+
+## Screenshots
+
+<div align="center">
+  <img src="assets/screenshot_hub.jpg" width="31%" alt="Training Hub Dashboard" />
+  &nbsp;
+  <img src="assets/screenshot_coaching.jpg" width="31%" alt="Post-Run AI Coaching" />
+  &nbsp;
+  <img src="assets/screenshot_plan_generator.jpg" width="31%" alt="Plan Generator" />
+</div>
+
+<p align="center">
+  <em>Training Hub Dashboard &bull; Post-Run AI Coaching &bull; 80/20 Plan Generator</em>
+</p>
+
+<br />
+
+<div align="center">
+  <img src="assets/screenshot_widgets_catalog.jpg" width="31%" alt="Widget Catalog" />
+  &nbsp;
+  <img src="assets/screenshot_widgets_sculptural.jpg" width="31%" alt="Sculptural Widgets" />
+  &nbsp;
+  <img src="assets/screenshot_settings.jpg" width="31%" alt="Zero-Server Setup" />
+</div>
+
+<p align="center">
+  <em>Material 3 Widgets &bull; Sculptural Dials &bull; Zero-Server Settings</em>
+</p>
 
 ---
 
