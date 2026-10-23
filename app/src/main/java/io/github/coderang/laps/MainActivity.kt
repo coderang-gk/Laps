@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -2151,14 +2152,23 @@ private fun PlanGeneratorDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     PlanGenerator.RaceDistance.entries.forEach { dist ->
                         FilterChip(
                             selected = selectedDistance == dist,
                             onClick = { selectedDistance = dist },
-                            label = { Text(dist.label, fontSize = 12.sp) }
+                            label = {
+                                Text(
+                                    text = dist.label,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    fontWeight = if (selectedDistance == dist) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            }
                         )
                     }
                 }
@@ -2172,14 +2182,23 @@ private fun PlanGeneratorDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(6, 8, 10, 12, 16).forEach { weeks ->
                         FilterChip(
                             selected = planWeeks == weeks,
                             onClick = { planWeeks = weeks },
-                            label = { Text("${weeks}w") }
+                            label = {
+                                Text(
+                                    text = "${weeks}w",
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    fontWeight = if (planWeeks == weeks) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            }
                         )
                     }
                 }
