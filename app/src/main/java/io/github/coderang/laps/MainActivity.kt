@@ -129,6 +129,7 @@ class MainActivity : ComponentActivity() {
                 permissionsLauncher.launch(perms.toTypedArray())
 
                 isSyncing = true
+                io.github.coderang.laps.sync.LapsSyncWorker.schedule(context)
                 LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
                     runOnUiThread {
                         payload = LapsRepository.getCachedPayload()
@@ -236,10 +237,15 @@ class MainActivity : ComponentActivity() {
                         onSaved = {
                             showSettingsDialog = false
                             isSyncing = true
-                            LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
+                            LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
                                 runOnUiThread {
                                     payload = LapsRepository.getCachedPayload()
                                     isSyncing = false
+                                    res.onSuccess {
+                                        Toast.makeText(context, "Logged in & Synced directly with COROS!", Toast.LENGTH_SHORT).show()
+                                    }.onFailure { err ->
+                                        Toast.makeText(context, "Sync note: ${err.message}", Toast.LENGTH_LONG).show()
+                                    }
                                 }
                             }
                         }
@@ -406,7 +412,8 @@ private fun MainAppScaffold(
                 onRunClicked = onRunClicked,
                 onResolveMissedWorkout = onResolveMissedWorkout,
                 isResolvingMissed = isResolvingMissed,
-                onConnectAccountClicked = onConnectAccountClicked
+                onConnectAccountClicked = onConnectAccountClicked,
+                onPlanClicked = onPlanClicked
             )
         } else {
             WidgetsGallerySection(
@@ -429,7 +436,8 @@ private fun TrainingHubSection(
     onRunClicked: (LastRunData) -> Unit,
     onResolveMissedWorkout: (String, String) -> Unit = { _, _ -> },
     isResolvingMissed: Boolean = false,
-    onConnectAccountClicked: () -> Unit = {}
+    onConnectAccountClicked: () -> Unit = {},
+    onPlanClicked: () -> Unit = {}
 ) {
     val runs = payload.recentRuns.ifEmpty { listOf(payload.lastRun) }
     val latest = runs.first()
@@ -500,7 +508,7 @@ private fun TrainingHubSection(
 
         // 2. Weekly Mileage Bar & 7-Day M-S Schedule Card
         item {
-            WeeklyMileageProgressCard(payload = payload)
+            WeeklyMileageProgressCard(payload = payload, onPlanClicked = onPlanClicked)
         }
 
         // 3. Tappable Latest Run Analysis Card (opens detailed modal on tap)
@@ -620,7 +628,7 @@ private fun WidgetsGallerySection(
 }
 
 @Composable
-private fun WeeklyMileageProgressCard(payload: LapsPayload) {
+private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -> Unit)? = null) {
     val wm = payload.weeklyMileage
     val weekProgress = (wm.completionPct / 100f).coerceIn(0f, 1f)
     val expectedProgress = (wm.expectedCompletionPct / 100f).coerceIn(0f, 1f)
@@ -704,9 +712,46 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload) {
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Training Days Only (No Rest Days)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                trainingDays.forEach { day ->
+            if (trainingDays.isEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPlanClicked?.invoke() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "NO RUNS SCHEDULED THIS WEEK",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Build an 80/20 Plan (1-Tap)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = { onPlanClicked?.invoke() },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Create Plan")
+                        }
+                    }
+                }
+            } else {
+                // Training Days Only (No Rest Days)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    trainingDays.forEach { day ->
                     val isCompleted = day.actualKm > 0
                     val dayPct = if (day.plannedKm > 0) {
                         ((day.actualKm / day.plannedKm) * 100.0 + 0.5).toInt()
@@ -789,6 +834,7 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload) {
             }
         }
     }
+}
 }
 
 @Composable
@@ -1946,6 +1992,48 @@ private fun LapsSettingsDialog(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = rememberShieldVector(),
+                                    contentDescription = "Privacy Shield",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Column {
+                            Text(
+                                text = "100% On-Device • Zero Cloud Relays",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Your credentials never leave this device. Laps communicates directly with teamapi.coros.com via direct HTTPS.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
                 Text(
                     text = "COROS Training Hub Account",
                     style = MaterialTheme.typography.titleSmall,
@@ -2491,6 +2579,31 @@ private fun rememberTuneVector(): ImageVector = remember {
             verticalLineTo(3.0f)
             horizontalLineTo(15.0f)
             verticalLineTo(9.0f)
+            close()
+        }
+    }.build()
+}
+
+@Composable
+private fun rememberShieldVector(): ImageVector = remember {
+    ImageVector.Builder(
+        name = "Shield",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.White),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(12.0f, 1.0f)
+            lineTo(3.0f, 5.0f)
+            verticalLineTo(11.0f)
+            curveTo(3.0f, 16.55f, 6.84f, 21.74f, 12.0f, 23.0f)
+            curveTo(17.16f, 21.74f, 21.0f, 16.55f, 21.0f, 11.0f)
+            verticalLineTo(5.0f)
+            lineTo(12.0f, 1.0f)
             close()
         }
     }.build()
