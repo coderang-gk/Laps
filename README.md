@@ -1,17 +1,23 @@
 <div align="center">
   <img src="assets/icon.png" width="96" height="96" alt="Laps Logo" />
   <h1>Laps</h1>
-  <p><strong>Standalone COROS Training Hub & Google Calendar sync for Android</strong></p>
-  <p>100% on-device. No cloud relays, no server requirements, no Google developer console setup.</p>
+  <p><strong>Open-source Android companion for COROS runners, bringing training metrics & planned workouts to home-screen widgets with local-first data handling.</strong></p>
+  <p>100% on-device. Zero cloud relays, zero tracking, no Google developer console setup.</p>
+
+  <p>
+    <a href="https://github.com/coderang-gk/Laps/actions/workflows/ci.yml"><img src="https://github.com/coderang-gk/Laps/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
+    <a href="https://github.com/coderang-gk/Laps/releases/latest"><img src="https://img.shields.io/github/v/release/coderang-gk/Laps?color=blue&label=Release" alt="Latest Release" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT" /></a>
+  </p>
 
   <p>
     <a href="#overview">Overview</a> •
     <a href="#screenshots">Screenshots</a> •
     <a href="#features">Features</a> •
     <a href="#setup">Setup</a> •
-    <a href="#widgets">Widgets</a> •
-    <a href="#architecture">Architecture</a> •
-    <a href="#license">License</a>
+    <a href="ROADMAP.md">Roadmap</a> •
+    <a href="CONTRIBUTING.md">Contributing</a> •
+    <a href="SECURITY.md">Security</a>
   </p>
 </div>
 
@@ -83,9 +89,10 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 
 ## Setup
 
-1. **Download & Install**: Grab the latest APK from the [Releases](https://github.com/coderang-gk/Laps/releases) page.
+1. **Download & Install**: Grab the signed APK from the [Releases](https://github.com/coderang-gk/Laps/releases) page.
+   - **SHA-256 (v1.0.0)**: `6f0057eed0e3100acbb94246fd17c444e8c948f808db0fdad2d8e8a6bc685e90`
 2. **Permissions**: Grant Calendar and Notification permissions when prompted so Laps can read your training schedule and update completed runs.
-3. **Connect Account**: Open **Settings** (top right gear icon) and enter your COROS Training Hub email and password. Credentials remain stored exclusively on your device in encrypted app storage.
+3. **Connect Account**: Open **Settings** (top right gear icon) and connect via **COROS OAuth 2.0 / MCP Bearer Token** (recommended) or direct account login.
 4. **Choose Calendar**: Select the Google Calendar you use for training runs.
 5. **(Optional) Gemini Key**: If you wish to enable extended AI coaching commentary on missed runs, paste your Gemini API key in Settings.
 
@@ -95,25 +102,15 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 
 ```
 io.github.coderang.laps/
-├── calendar/
-│   ├── CalendarSyncManager.kt   # Native Android CalendarContract query, insert, shift, skip
-│   └── PlanGenerator.kt         # Scientific 80/20 periodized plan engine
-├── coach/
-│   ├── EvoLabAnalyzer.kt        # On-device physiological heuristics & missed-run options
-│   └── GeminiCoachClient.kt     # Optional Gemini API client for coaching insights
-├── coros/
-│   └── CorosApiClient.kt        # Native Kotlin COROS client with gzip FIT decompression
-├── data/
-│   ├── LapsDataModels.kt        # Domain models (Athlete, Workout, EvoLab, Widgets)
-│   └── LapsRepository.kt        # On-device data coordination & preference storage
-├── notifications/
-│   └── LapsNotificationHelper.kt# Local Android post-run notifications
-├── ui/
-│   ├── ExpressiveTheme.kt       # Material 3 slate-indigo / Material You palette
-│   └── ExpressiveWidgetRenderer.kt # Canvas & graphics-shapes bitmap renderer
-├── widgets/
-│   └── LapsWidgetProviders.kt   # AppWidgetProviders for the 6 home screen slots
-└── MainActivity.kt              # Compose UI: Training Hub, Widget Catalog, Dialogs
+├── calendar/             # Native Android CalendarContract query, insert, shift, skip & PlanGenerator
+├── coach/                # EvoLab physiological heuristics & Gemini AI reasoning
+├── coros/                # COROS API client (OAuth 2.0 / MCP tokens + direct HTTPS sync)
+├── data/                 # Domain models (Athlete, Workout, EvoLab, Widgets) & SharedPreferences
+├── notifications/        # Local Android post-run notifications
+├── sync/                 # WorkManager autonomous 3-hour background sync worker
+├── ui/                   # Material 3 slate-indigo / Material You palette & Canvas renderer
+├── widgets/              # AppWidgetProviders for the 6 home screen slots
+└── MainActivity.kt       # Training Hub, Widget Catalog, and Settings UI
 ```
 
 ---
@@ -122,8 +119,8 @@ io.github.coderang.laps/
 
 Requirements:
 - Android Studio Ladybug or newer
-- JDK 17+
-- Android SDK 35
+- JDK 21+
+- Android SDK 36 (Min SDK 31)
 
 ```bash
 git clone https://github.com/coderang-gk/Laps.git
@@ -137,16 +134,18 @@ The resulting APK will be located at `app/build/outputs/apk/debug/app-debug.apk`
 
 ## Testing & Reliability
 
-Laps adopts a Canta-inspired hermetic testing architecture. All business logic, EvoLab physiological heuristics, 80/20 plan generation, and calendar operations run on pure JVM with zero device emulator requirements using an in-memory `FakeCalendarStore`:
+Laps adopts a Canta-inspired hermetic testing architecture. All business logic, EvoLab physiological heuristics, 80/20 plan generation, COROS client auth, and calendar operations run on pure JVM with zero device emulator requirements using in-memory fakes (`FakeCalendarStore`):
 
 ```bash
 ./gradlew test
 ```
 
-- **Execution Speed**: 13 unit tests execute in **<400ms** on pure JVM.
+- **Execution Speed**: **22 unit tests** execute in **<500ms** on pure JVM.
 - **Test Matrix**:
   - `CalendarSyncManagerTest` (7 tests): Skip flow (`[SKIPPED]` title tagging), Shift flow (automatic DOW title rewrite e.g. `W3 Tue` $\rightarrow$ `W3 Wed` and scheduled time preservation), metadata regex parsing.
+  - `CorosApiClientTest` (5 tests): Bearer token authentication, blank token rejection, unauthenticated error handling, defensive activity & profile model defaults.
   - `EvoLabAnalyzerTest` (4 tests): High-intensity exhaustion heuristics, key Long Run protection, threshold swapping, aerobic base absorption.
+  - `LapsDataModelsTest` (4 tests): Default sample validation, weekly mileage completion ratios, EvoLab productive status, 80/20 polarization integrity.
   - `PlanGeneratorTest` (2 tests): 80/20 Half-Marathon (40 workouts) & Marathon progressive overload generation.
 
 ---

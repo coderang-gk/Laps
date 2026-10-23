@@ -2267,9 +2267,7 @@ private fun LapsSettingsDialog(
                     Spacer(modifier = Modifier.height(24.dp))
                     OutlinedButton(
                         onClick = {
-                            LapsRepository.saveCorosToken(context, "")
-                            LapsRepository.saveCorosCredentials(context, "", "")
-                            LapsRepository.setSetupCompleted(context, false)
+                            LapsRepository.clearAllCredentials(context)
                             onSaved()
                         },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),

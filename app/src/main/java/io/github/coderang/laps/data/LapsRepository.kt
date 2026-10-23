@@ -74,6 +74,22 @@ object LapsRepository {
             .apply()
     }
 
+    /**
+     * Atomically purges all authentication tokens, passwords, and API keys from disk
+     * and resets in-memory cache to demo state.
+     */
+    fun clearAllCredentials(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_COROS_EMAIL)
+            .remove(KEY_COROS_PASSWORD)
+            .remove(KEY_COROS_TOKEN)
+            .remove(KEY_GEMINI_KEY)
+            .putBoolean(KEY_SETUP_COMPLETED, false)
+            .apply()
+        resetSamplePayload()
+    }
+
     fun getSelectedCalendarId(context: Context): Long {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getLong(KEY_CALENDAR_ID, -1L)
