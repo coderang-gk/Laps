@@ -24,6 +24,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- COROS OAuth 2.0 / MCP Redirect Handler -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="laps"
+                    android:host="oauth"
+                    android:pathPrefix="/callback" />
+            </intent-filter>
         </activity>
 
         <!-- 1. Weekly Mileage & Engine Hero (4x2) -->

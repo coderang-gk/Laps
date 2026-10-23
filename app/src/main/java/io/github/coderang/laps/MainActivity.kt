@@ -89,10 +89,37 @@ class MainActivity : ComponentActivity() {
         WidgetCatalogItem(11, "EvoLab Splits", "4-row pace & HR table", "2×2", "CARDS", ExpressiveTileType.COMMAND_CENTER)
     )
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.data?.let { uri ->
+            if (uri.scheme == "laps" && uri.host == "oauth") {
+                val token = uri.getQueryParameter("token") ?: uri.getQueryParameter("access_token") ?: uri.getQueryParameter("code")
+                if (!token.isNullOrBlank()) {
+                    LapsRepository.saveCorosToken(this, token)
+                    LapsRepository.setSetupCompleted(this, true)
+                    Toast.makeText(this, "COROS OAuth 2.0 Connected!", Toast.LENGTH_SHORT).show()
+                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(this)
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         LapsNotificationHelper.createNotificationChannel(this)
+
+        // Handle COROS OAuth 2.0 / MCP deep link callback
+        intent?.data?.let { uri ->
+            if (uri.scheme == "laps" && uri.host == "oauth") {
+                val token = uri.getQueryParameter("token") ?: uri.getQueryParameter("access_token") ?: uri.getQueryParameter("code")
+                if (!token.isNullOrBlank()) {
+                    LapsRepository.saveCorosToken(this, token)
+                    LapsRepository.setSetupCompleted(this, true)
+                    Toast.makeText(this, "COROS OAuth 2.0 Connected!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
 
         val shouldOpenRunDetailFromIntent = intent?.getBooleanExtra(EXTRA_OPEN_RUN_DETAIL, false) ?: false
 
@@ -1966,13 +1993,16 @@ private fun LapsSettingsDialog(
 ) {
     val context = LocalContext.current
     val (savedEmail, savedPassword) = remember { LapsRepository.getCorosCredentials(context) }
+    val savedToken = remember { LapsRepository.getCorosToken(context) }
     val savedCalId = remember { LapsRepository.getSelectedCalendarId(context) }
     val savedGemini = remember { LapsRepository.getGeminiKey(context) }
 
+    var token by remember { mutableStateOf(savedToken) }
     var email by remember { mutableStateOf(savedEmail) }
     var password by remember { mutableStateOf(savedPassword) }
     var geminiKey by remember { mutableStateOf(savedGemini) }
     var selectedCalendarId by remember { mutableLongStateOf(savedCalId) }
+    var isOAuthMode by remember { mutableStateOf(savedToken.isNotBlank() || (savedEmail.isBlank() && savedPassword.isBlank())) }
 
     val calendars = remember { CalendarSyncManager.getAvailableCalendars(context) }
     var calendarExpanded by remember { mutableStateOf(false) }
@@ -2020,13 +2050,13 @@ private fun LapsSettingsDialog(
                         }
                         Column {
                             Text(
-                                text = "100% On-Device • Zero Cloud Relays",
+                                text = "Zero Cloud • On-Device Sandboxing",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                text = "Your credentials never leave this device. Laps communicates directly with teamapi.coros.com via direct HTTPS.",
+                                text = "Tokens and credentials reside strictly in private Android app sandboxing. For password-free security, connect via COROS OAuth 2.0 / MCP.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -2034,34 +2064,100 @@ private fun LapsSettingsDialog(
                     }
                 }
 
-                Text(
-                    text = "COROS Training Hub Account",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Logs in directly to teamapi.coros.com on-device. No intermediary server.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("COROS Email") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("COROS Password") },
-                    singleLine = true,
-                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Auth Method Tabs
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = { isOAuthMode = true },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("OAuth 2.0 / MCP", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
+                    FilledTonalButton(
+                        onClick = { isOAuthMode = false },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (!isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = if (!isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("Direct Login", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (isOAuthMode) {
+                    Text(
+                        text = "Official COROS OAuth 2.0 / MCP Token",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Password-free Bearer token authentication via Model Context Protocol (mcp.coros.com).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it },
+                        label = { Text("COROS OAuth Bearer Token") },
+                        placeholder = { Text("Paste Bearer token from mcp.coros.com") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            val authUri = android.net.Uri.parse("https://mcpus.coros.com/oauth2/authorize?client_id=laps-android&response_type=code&redirect_uri=laps://oauth/callback&scope=openid%20mcp.tools%20offline_access")
+                            val browserIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, authUri)
+                            context.startActivity(browserIntent)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Open COROS OAuth Portal (Browser)")
+                    }
+                } else {
+                    Text(
+                        text = "COROS Training Hub Account (Legacy)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Direct HTTPS authentication with teamapi.coros.com on-device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("COROS Email") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("COROS Password") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(20.dp))
                 Text(
@@ -2171,6 +2267,7 @@ private fun LapsSettingsDialog(
                     Spacer(modifier = Modifier.height(24.dp))
                     OutlinedButton(
                         onClick = {
+                            LapsRepository.saveCorosToken(context, "")
                             LapsRepository.saveCorosCredentials(context, "", "")
                             LapsRepository.setSetupCompleted(context, false)
                             onSaved()
@@ -2186,7 +2283,11 @@ private fun LapsSettingsDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    LapsRepository.saveCorosCredentials(context, email, password)
+                    if (isOAuthMode) {
+                        LapsRepository.saveCorosToken(context, token)
+                    } else {
+                        LapsRepository.saveCorosCredentials(context, email, password)
+                    }
                     LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                     LapsRepository.saveGeminiKey(context, geminiKey)
                     LapsRepository.setSetupCompleted(context, true)

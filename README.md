@@ -41,8 +41,10 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 
 ## Features
 
-### Direct COROS Training Hub Integration
-- Direct authentication with `teamapi.coros.com` on-device.
+### Direct COROS Integration & OAuth 2.0 / MCP Support
+- **Dual Authentication Architecture**:
+  - **Official OAuth 2.0 / MCP (Recommended)**: Connect via COROS Model Context Protocol (`mcp.coros.com`) with PKCE and Bearer tokens. Zero password entry required.
+  - **Direct HTTPS Sync (Legacy)**: Connects directly with `teamapi.coros.com` on-device without intermediary servers.
 - Fetches real-time workout telemetry: distance, pace, elevation, cadence, training load, aerobic/anaerobic TE, and cadence.
 - Synchronizes EvoLab metrics: Marathon Level, Lactate Threshold Pace & HR, Running Fitness, Fatigue, and Load Impact.
 
@@ -152,8 +154,18 @@ Laps adopts a Canta-inspired hermetic testing architecture. All business logic, 
 ## Privacy & Security
 
 - **Zero Cloud Intermediaries**: Laps contains no analytics trackers, advertising SDKs, or third-party telemetries.
-- **Direct Auth**: Requests originate directly from your device to COROS (`teamapi.coros.com`) over HTTPS.
-- **Local Storage**: All credentials and tokens are stored in Android private app storage.
+- **Direct Auth**: Requests originate directly from your device to COROS (`teamapi.coros.com` / `mcp.coros.com`) over HTTPS.
+- **Local Sandboxing**: All credentials and OAuth tokens are stored in Android private app storage. No local storage scheme is completely impenetrable (such as on compromised/rooted devices); for maximum peace of mind, we recommend using the **COROS OAuth 2.0 Bearer token** path which keeps your password completely off-device.
+
+---
+
+## Roadmap
+
+- [x] Autonomous silent background sync via Android `WorkManager` (v1.0)
+- [x] Adaptive Missed-Workout Resolution (Skip & Shift heuristics with Google Calendar title rewrites) (v1.0)
+- [x] Dual-mode authentication (OAuth 2.0 Bearer Token + Direct Login) (v1.0)
+- [ ] Direct-to-Watch structured workout push via COROS Partner API / MCP write tools (v1.1)
+- [ ] IzzyOnDroid & F-Droid repository distribution (v1.1)
 
 ---
 

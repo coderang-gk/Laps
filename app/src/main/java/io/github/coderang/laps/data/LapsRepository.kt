@@ -18,6 +18,7 @@ object LapsRepository {
     private const val PREFS_NAME = "laps_app_prefs"
     private const val KEY_COROS_EMAIL = "coros_email"
     private const val KEY_COROS_PASSWORD = "coros_password"
+    private const val KEY_COROS_TOKEN = "coros_access_token"
     private const val KEY_CALENDAR_ID = "selected_calendar_id"
     private const val KEY_RACE_NAME = "race_name"
     private const val KEY_RACE_DATE_MILLIS = "race_date_millis"
@@ -39,8 +40,22 @@ object LapsRepository {
     }
 
     fun hasCredentials(context: Context): Boolean {
+        val token = getCorosToken(context)
+        if (token.isNotBlank()) return true
         val (email, pwd) = getCorosCredentials(context)
         return email.isNotBlank() && pwd.isNotBlank()
+    }
+
+    fun getCorosToken(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_COROS_TOKEN, "") ?: ""
+    }
+
+    fun saveCorosToken(context: Context, token: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_COROS_TOKEN, token.trim())
+            .apply()
     }
 
     fun getCorosCredentials(context: Context): Pair<String, String> {
@@ -108,15 +123,21 @@ object LapsRepository {
     }
 
     fun syncOnDevice(context: Context): Result<LapsPayload> {
+        val token = getCorosToken(context)
         val (email, password) = getCorosCredentials(context)
-        if (email.isBlank() || password.isBlank()) {
+        if (token.isBlank() && (email.isBlank() || password.isBlank())) {
             return Result.success(cachedPayload) // Demo fallback state
         }
 
         return try {
             val coros = CorosApiClient()
-            val loginResult = coros.login(email, password)
-            val profile = loginResult.getOrNull() ?: CorosApiClient.CorosProfile()
+            val profile = if (token.isNotBlank()) {
+                val tokenResult = coros.authenticateWithToken(token)
+                tokenResult.getOrNull() ?: CorosApiClient.CorosProfile(nickname = "COROS Athlete")
+            } else {
+                val loginResult = coros.login(email, password)
+                loginResult.getOrNull() ?: CorosApiClient.CorosProfile()
+            }
 
             val actResult = coros.fetchActivities(limit = 25)
             val activities = actResult.getOrNull() ?: emptyList()
