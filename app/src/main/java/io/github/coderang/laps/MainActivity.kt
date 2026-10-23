@@ -1811,7 +1811,7 @@ private fun LapsOnboardingDialog(
     onConnected: () -> Unit
 ) {
     val context = LocalContext.current
-    var isOAuthMode by remember { mutableStateOf(true) }
+    var isOAuthMode by remember { mutableStateOf(false) }
     var token by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -1914,17 +1914,6 @@ private fun LapsOnboardingDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilledTonalButton(
-                        onClick = { isOAuthMode = true; errorMessage = null },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Text("OAuth 2.0 / MCP", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    }
-                    FilledTonalButton(
                         onClick = { isOAuthMode = false; errorMessage = null },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
@@ -1935,19 +1924,30 @@ private fun LapsOnboardingDialog(
                     ) {
                         Text("Direct Login", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     }
+                    FilledTonalButton(
+                        onClick = { isOAuthMode = true; errorMessage = null },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("MCP Token", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
                 if (isOAuthMode) {
                     Text(
-                        text = "Official COROS OAuth 2.0 / MCP",
+                        text = "COROS MCP Bearer Token (Advanced)",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Password-free Bearer token authentication via Model Context Protocol (mcp.coros.com).",
+                        text = "Paste your Bearer token from COROS Model Context Protocol (mcp.coros.com).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1955,32 +1955,20 @@ private fun LapsOnboardingDialog(
                     OutlinedTextField(
                         value = token,
                         onValueChange = { token = it; errorMessage = null },
-                        label = { Text("COROS OAuth Bearer Token") },
-                        placeholder = { Text("Paste Bearer token from mcp.coros.com") },
+                        label = { Text("COROS MCP Bearer Token") },
+                        placeholder = { Text("Bearer eyJhbGci...") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            val authUri = android.net.Uri.parse("https://mcpus.coros.com/oauth2/authorize?client_id=laps-android&response_type=code&redirect_uri=laps://oauth/callback&scope=openid%20mcp.tools%20offline_access")
-                            val browserIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, authUri)
-                            context.startActivity(browserIntent)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Open COROS OAuth Portal (Browser)")
-                    }
                 } else {
                     Text(
-                        text = "Direct COROS Training Hub Account",
+                        text = "Direct COROS Training Hub Login",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Direct on-device sync with teamapi.coros.com. Credentials remain encrypted in private app storage.",
+                        text = "Direct on-device authentication with teamapi.coros.com. Credentials stay encrypted strictly in your device sandbox.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2262,17 +2250,6 @@ private fun LapsSettingsDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilledTonalButton(
-                        onClick = { isOAuthMode = true },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Text("OAuth 2.0 / MCP", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    }
-                    FilledTonalButton(
                         onClick = { isOAuthMode = false },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
@@ -2283,19 +2260,30 @@ private fun LapsSettingsDialog(
                     ) {
                         Text("Direct Login", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     }
+                    FilledTonalButton(
+                        onClick = { isOAuthMode = true },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("MCP Token", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
                 if (isOAuthMode) {
                     Text(
-                        text = "Official COROS OAuth 2.0 / MCP Token",
+                        text = "COROS MCP Bearer Token (Advanced)",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Password-free Bearer token authentication via Model Context Protocol (mcp.coros.com).",
+                        text = "Paste your Bearer token from COROS Model Context Protocol (mcp.coros.com).",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2303,32 +2291,20 @@ private fun LapsSettingsDialog(
                     OutlinedTextField(
                         value = token,
                         onValueChange = { token = it },
-                        label = { Text("COROS OAuth Bearer Token") },
-                        placeholder = { Text("Paste Bearer token from mcp.coros.com") },
+                        label = { Text("COROS MCP Bearer Token") },
+                        placeholder = { Text("Bearer eyJhbGci...") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            val authUri = android.net.Uri.parse("https://mcpus.coros.com/oauth2/authorize?client_id=laps-android&response_type=code&redirect_uri=laps://oauth/callback&scope=openid%20mcp.tools%20offline_access")
-                            val browserIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, authUri)
-                            context.startActivity(browserIntent)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Open COROS OAuth Portal (Browser)")
-                    }
                 } else {
                     Text(
-                        text = "COROS Training Hub Account (Legacy)",
+                        text = "Direct COROS Training Hub Login",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Direct HTTPS authentication with teamapi.coros.com on-device.",
+                        text = "Direct HTTPS authentication with teamapi.coros.com on-device. Stored securely in private app storage.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
