@@ -312,13 +312,13 @@ object ExpressiveWidgetRenderer {
         canvas.drawRoundRect(rightRect, s * 0.095f, s * 0.095f, fillPaint(p.primaryContainer))
         val rightValPaint = textPaint(p.onPrimaryContainer, s * 0.13f, bold = true, align = Paint.Align.CENTER)
         canvas.drawText(
-            String.format(Locale.US, "%.0fK", wm.plannedKm),
+            if (wm.plannedKm > 0) String.format(Locale.US, "%.0fK", wm.plannedKm) else "${wm.runsCompleted}R",
             rightRect.centerX(),
             numY,
             rightValPaint
         )
 
-        // Bottom Stadium Pill ("Sun 20K")
+        // Bottom Stadium Pill ("Sun 20K" or "Live Metrics")
         val pillW = s * 0.33f
         val pillH = s * 0.10f
         val pillTop = cy + r * 0.50f
@@ -326,8 +326,9 @@ object ExpressiveWidgetRenderer {
         canvas.drawRoundRect(pillRect, pillH / 2f, pillH / 2f, fillPaint(p.surfaceContainerHighest))
 
         val pillTextPaint = textPaint(p.onSurface, s * 0.045f, bold = true, align = Paint.Align.CENTER)
+        val pillLabel = if (nw.targetDistanceKm > 0) "Sun ${nw.targetDistanceKm.toInt()}K" else "Live Metrics"
         canvas.drawText(
-            "Sun ${nw.targetDistanceKm.toInt()}K",
+            pillLabel,
             cx,
             pillRect.centerY() + s * 0.016f,
             pillTextPaint
@@ -500,7 +501,8 @@ object ExpressiveWidgetRenderer {
         canvas.drawRoundRect(outer, corner, corner, fillPaint(p.surfaceContainerHigh))
 
         val headerPaint = textPaint(p.primary, s * 0.058f, bold = true)
-        canvas.drawText("Week ${data.raceCountdown.currentWeek} Plan", pad + s * 0.075f, pad + s * 0.15f, headerPaint)
+        val headerText = if (data.weeklyMileage.plannedKm > 0) "Week ${data.raceCountdown.currentWeek} Plan" else "Weekly Activity"
+        canvas.drawText(headerText, pad + s * 0.075f, pad + s * 0.15f, headerPaint)
 
         val badgeCx = s - pad - s * 0.135f
         val badgeCy = pad + s * 0.125f
@@ -518,11 +520,20 @@ object ExpressiveWidgetRenderer {
             )
         }
 
-        val items = listOf(
-            "✓ Tue Threshold · 8.5 km",
-            "✓ Wed + Fri Easy · 13.8 km",
-            "Next: ${data.nextWorkout.title}"
-        )
+        val acts = data.recentRuns
+        val items = if (acts.isNotEmpty()) {
+            listOf(
+                "✓ ${acts[0].name.take(16)} · ${String.format(Locale.US, "%.1f", acts[0].distanceKm)}k",
+                if (acts.size > 1) "✓ ${acts[1].name.take(16)} · ${String.format(Locale.US, "%.1f", acts[1].distanceKm)}k" else "${String.format(Locale.US, "%.1f", data.weeklyMileage.actualKm)} km logged this week",
+                if (data.nextWorkout.targetDistanceKm > 0) "Next: ${data.nextWorkout.title.take(18)}" else "Load: ${data.trainingLoad.statusBadge} · ${data.trainingLoad.acuteTl} TL"
+            )
+        } else {
+            listOf(
+                "✓ Tue Threshold · 8.5 km",
+                "✓ Wed + Fri Easy · 13.8 km",
+                if (data.nextWorkout.targetDistanceKm > 0) "Next: ${data.nextWorkout.title}" else "Load: ${data.trainingLoad.statusBadge}"
+            )
+        }
 
         val pillLeft = pad + s * 0.058f
         val pillRight = s - pad - s * 0.058f
@@ -587,7 +598,7 @@ object ExpressiveWidgetRenderer {
         )
 
         canvas.drawText(
-            "/ ${wm.plannedKm.toInt()} KM",
+            if (wm.plannedKm > 0) "/ ${wm.plannedKm.toInt()} KM" else "THIS WEEK",
             trX,
             trY + s * 0.115f,
             textPaint(p.primary, s * 0.048f, bold = true, align = Paint.Align.CENTER)
@@ -603,7 +614,7 @@ object ExpressiveWidgetRenderer {
         canvas.drawCircle(blX - s * 0.01f, blY - s * 0.01f, s * 0.135f, fillPaint(p.primary))
 
         canvas.drawText(
-            "${wm.completionPct}%",
+            if (wm.plannedKm > 0) "${wm.completionPct}%" else "${wm.runsCompleted}",
             blX - s * 0.01f,
             blY + s * 0.018f,
             textPaint(p.onPrimary, s * 0.082f, bold = true, align = Paint.Align.CENTER)
@@ -611,7 +622,7 @@ object ExpressiveWidgetRenderer {
 
         // Bottom-left caption inside lower dome
         canvas.drawText(
-            "${wm.runsCompleted}/${wm.runsPlanned} RUNS",
+            if (wm.plannedKm > 0) "${wm.runsCompleted}/${wm.runsPlanned} RUNS" else "${wm.runsCompleted} RUNS",
             blX + s * 0.01f,
             blY + s * 0.185f,
             textPaint(p.onSurfaceVariant, s * 0.042f, bold = true, align = Paint.Align.CENTER)

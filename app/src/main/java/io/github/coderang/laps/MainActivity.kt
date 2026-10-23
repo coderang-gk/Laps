@@ -707,7 +707,7 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "/ ${String.format(Locale.US, "%.0f", wm.plannedKm)} km",
+                            text = if (wm.plannedKm > 0) "/ ${String.format(Locale.US, "%.0f", wm.plannedKm)} km" else "km this week",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 3.dp)
@@ -717,14 +717,14 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
 
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "${wm.completionPct}% Done",
+                        text = if (wm.plannedKm > 0) "${wm.completionPct}% Done" else "${wm.runsCompleted} Runs Logged",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1
                     )
                     Text(
-                        text = "${String.format(Locale.US, "%.1f", wm.remainingKm)} km remaining",
+                        text = if (wm.plannedKm > 0) "${String.format(Locale.US, "%.1f", wm.remainingKm)} km remaining" else "Active training week",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
@@ -1472,8 +1472,13 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer
                 ) {
+                    val statusText = if (rc.daysLeft > 0) {
+                        "${rc.raceName.take(12)} · ${rc.daysLeft}d"
+                    } else {
+                        "COROS · ${tl.statusBadge}"
+                    }
                     Text(
-                        text = "Pune HM · ${rc.daysLeft}d",
+                        text = statusText,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1489,11 +1494,16 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                val wkSub = if (wm.plannedKm > 0) {
+                    "/ ${wm.plannedKm.toInt()}K (${wm.completionPct}%)"
+                } else {
+                    "${wm.runsCompleted} runs"
+                }
                 MetricPod(
                     modifier = Modifier.weight(1f),
-                    label = "Week ${rc.currentWeek}",
+                    label = if (wm.plannedKm > 0) "Week ${rc.currentWeek}" else "Weekly Dist",
                     value = String.format(Locale.US, "%.1fK", wm.actualKm),
-                    sub = "/ ${wm.plannedKm.toInt()}K (${wm.completionPct}%)",
+                    sub = wkSub,
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     shape = RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp, topEnd = 10.dp, bottomEnd = 10.dp)
@@ -1520,49 +1530,91 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Next Workout Strip
+            // Next Workout Strip / COROS Metrics Live Sync Strip
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "NEXT WORKOUT · ${nw.dayBadge}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = nw.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "${nw.targetPace}  ·  ${nw.targetHrZone}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                if (nw.targetDistanceKm > 0 || (nw.title.isNotBlank() && nw.title != "No Scheduled Workout")) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = if (nw.targetDistanceKm > 0) "${nw.targetDistanceKm.toInt()} km" else "Planned",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "NEXT WORKOUT · ${nw.dayBadge}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = nw.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "${nw.targetPace}  ·  ${nw.targetHrZone}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest
+                        ) {
+                            Text(
+                                text = if (nw.targetDistanceKm > 0) "${nw.targetDistanceKm.toInt()} km" else "Planned",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "COROS LIVE SYNC · METRICS ONLY",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${wm.runsCompleted} runs logged this week (${String.format(Locale.US, "%.1f", wm.actualKm)} km)",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Widgets updating on-device · No training plan required",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "Live",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -1768,7 +1820,7 @@ private fun LapsOnboardingDialog(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val calendars = remember { CalendarSyncManager.getAvailableCalendars(context) }
-    var selectedCalendarId by remember { mutableLongStateOf(calendars.firstOrNull { it.isPrimary }?.id ?: calendars.firstOrNull()?.id ?: -1L) }
+    var selectedCalendarId by remember { mutableLongStateOf(-1L) }
     var calendarExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -1959,17 +2011,24 @@ private fun LapsOnboardingDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "Google Calendar for Runs",
+                    text = "Google Calendar (Optional)",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
                 )
+                Text(
+                    text = "Only needed for scheduled workouts. Choose 'None (Metrics Only)' if you just want widgets.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(modifier = Modifier.height(8.dp))
 
                 val selectedCal = calendars.find { it.id == selectedCalendarId }
-                    ?: calendars.firstOrNull { it.isPrimary }
-                    ?: calendars.firstOrNull()
-                val selectedCalLabel = selectedCal?.let { "${it.displayName} (${it.accountName})" } ?: "Default System Calendar"
+                val selectedCalLabel = when {
+                    selectedCalendarId == -1L -> "None (Metrics Only — Widgets & Live Sync)"
+                    selectedCal != null -> "${selectedCal.displayName} (${selectedCal.accountName})"
+                    else -> "None (Metrics Only — Widgets & Live Sync)"
+                }
 
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedCard(
@@ -1997,33 +2056,35 @@ private fun LapsOnboardingDialog(
                         expanded = calendarExpanded,
                         onDismissRequest = { calendarExpanded = false }
                     ) {
-                        if (calendars.isEmpty()) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("None (Metrics Only — Widgets & Live Sync)", fontWeight = FontWeight.SemiBold)
+                                    Text("No training plan. Connect purely for COROS metrics widgets.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            onClick = {
+                                selectedCalendarId = -1L
+                                calendarExpanded = false
+                            }
+                        )
+                        calendars.forEach { cal ->
                             DropdownMenuItem(
-                                text = { Text("Default System Calendar") },
+                                text = {
+                                    Column {
+                                        Text(cal.displayName, fontWeight = FontWeight.Medium)
+                                        Text(
+                                            cal.accountName,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
                                 onClick = {
-                                    selectedCalendarId = -1L
+                                    selectedCalendarId = cal.id
                                     calendarExpanded = false
                                 }
                             )
-                        } else {
-                            calendars.forEach { cal ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(cal.displayName, fontWeight = FontWeight.Medium)
-                                            Text(
-                                                cal.accountName,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        selectedCalendarId = cal.id
-                                        calendarExpanded = false
-                                    }
-                                )
-                            }
                         }
                     }
                 }
@@ -2292,22 +2353,24 @@ private fun LapsSettingsDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
                 Text(
-                    text = "Google Calendar Sync",
+                    text = "Google Calendar (Optional)",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = "Select which on-device Google Calendar to read and sync training runs with.",
+                    text = "Only needed for scheduled workouts. Choose 'None (Metrics Only)' if you just want widgets.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
                 val selectedCal = calendars.find { it.id == selectedCalendarId }
-                    ?: calendars.firstOrNull { it.isPrimary }
-                    ?: calendars.firstOrNull()
-                val selectedCalLabel = selectedCal?.let { "${it.displayName} (${it.accountName})" } ?: "Default System Calendar"
+                val selectedCalLabel = when {
+                    selectedCalendarId == -1L -> "None (Metrics Only — Widgets & Live Sync)"
+                    selectedCal != null -> "${selectedCal.displayName} (${selectedCal.accountName})"
+                    else -> "None (Metrics Only — Widgets & Live Sync)"
+                }
 
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedCard(
@@ -2342,33 +2405,35 @@ private fun LapsSettingsDialog(
                         expanded = calendarExpanded,
                         onDismissRequest = { calendarExpanded = false }
                     ) {
-                        if (calendars.isEmpty()) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("None (Metrics Only — Widgets & Live Sync)", fontWeight = FontWeight.SemiBold)
+                                    Text("No training plan. Connect purely for COROS metrics widgets.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            onClick = {
+                                selectedCalendarId = -1L
+                                calendarExpanded = false
+                            }
+                        )
+                        calendars.forEach { cal ->
                             DropdownMenuItem(
-                                text = { Text("Default System Calendar") },
+                                text = {
+                                    Column {
+                                        Text(cal.displayName, fontWeight = FontWeight.Medium)
+                                        Text(
+                                            cal.accountName,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
                                 onClick = {
-                                    selectedCalendarId = -1L
+                                    selectedCalendarId = cal.id
                                     calendarExpanded = false
                                 }
                             )
-                        } else {
-                            calendars.forEach { cal ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(cal.displayName, fontWeight = FontWeight.Medium)
-                                            Text(
-                                                cal.accountName,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        selectedCalendarId = cal.id
-                                        calendarExpanded = false
-                                    }
-                                )
-                            }
                         }
                     }
                 }

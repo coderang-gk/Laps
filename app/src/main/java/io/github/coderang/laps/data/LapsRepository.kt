@@ -240,7 +240,7 @@ object LapsRepository {
             plannedWkKm = ((plannedWkKm * 100).toInt()) / 100.0
             val completionPct = if (plannedWkKm > 0) ((actualWkKm / plannedWkKm) * 100.0 + 0.5).toInt() else 0
 
-            // 4. Upcoming Workout
+            // 4. Upcoming Workout (only populate if planned in calendar; otherwise clean metrics-only state)
             val upcoming = plannedList.firstOrNull { it.dateString >= todayStr && !it.isCompleted && !it.isSkipped }
             val nwData = if (upcoming != null) {
                 NextWorkoutData(
@@ -253,7 +253,18 @@ object LapsRepository {
                     targetPace = upcoming.targetPace,
                     targetHrZone = upcoming.targetHrZone
                 )
-            } else NextWorkoutData()
+            } else {
+                NextWorkoutData(
+                    title = "No Scheduled Workout",
+                    workoutType = "Free Run",
+                    date = todayStr,
+                    dayBadge = "Metrics Only",
+                    countdown = "All runs tracked via COROS",
+                    targetDistanceKm = 0.0,
+                    targetPace = "--",
+                    targetHrZone = "Auto"
+                )
+            }
 
             // 5. Training Load & 80/20 Zone Spectrum
             val wkRuns = activities.filter { it.dateOnly >= sdf.format(mondayDate) && it.dateOnly <= sdf.format(sundayMillis) }
@@ -334,6 +345,18 @@ object LapsRepository {
                 )
             } else null
 
+            val rcData = if (calId != -1L && plannedList.isNotEmpty()) {
+                RaceCountdownData()
+            } else {
+                RaceCountdownData(
+                    raceName = "COROS ATHLETE",
+                    raceDate = todayStr,
+                    daysLeft = 0,
+                    phase = "METRICS & LIVE WIDGETS",
+                    readinessTag = "OPTIMAL"
+                )
+            }
+
             val payload = LapsPayload(
                 updatedLabel = SimpleDateFormat("h:mm a", Locale.US).format(Date()),
                 athlete = AthleteProfile(profile.nickname, profile.rhr, profile.maxHr, profile.lthr, profile.ltspPace, profile.weightKg),
@@ -347,6 +370,7 @@ object LapsRepository {
                 ),
                 trainingLoad = TrainingLoadData(acuteTl = acuteTl, lthr = profile.lthr, rhr = profile.rhr),
                 nextWorkout = nwData,
+                raceCountdown = rcData,
                 zoneSpectrum = ZoneSpectrumData(aerobicPct = aeroPct, thresholdPct = 100 - aeroPct),
                 lastRun = recentList.firstOrNull() ?: LastRunData(),
                 missedWorkout = missedWorkoutData,
