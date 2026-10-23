@@ -1409,16 +1409,16 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
                     modifier = Modifier.weight(1f),
                     label = "Acute Load",
                     value = "${tl.acuteTl}",
-                    sub = "${tl.statusBadge} · ${tl.readinessScore}%",
+                    sub = tl.statusBadge.lowercase().replaceFirstChar { it.uppercase() },
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     shape = RoundedCornerShape(10.dp)
                 )
                 MetricPod(
                     modifier = Modifier.weight(1f),
-                    label = "EvoLab LT",
+                    label = "Threshold",
                     value = rc.currentLtsp.replace(" /km", ""),
-                    sub = "LTHR ${tl.lthr} · RHR ${tl.rhr}",
+                    sub = "${tl.lthr} bpm",
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                     shape = RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp, topEnd = 22.dp, bottomEnd = 22.dp)
@@ -1460,15 +1460,15 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
                     }
 
                     Surface(
-                        shape = CircleShape,
+                        shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerHighest
                     ) {
                         Text(
-                            text = "Watch ✓",
+                            text = if (nw.targetDistanceKm > 0) "${nw.targetDistanceKm.toInt()} km" else "Planned",
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
