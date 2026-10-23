@@ -54,7 +54,7 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 - Optional **Gemini AI Coach** integration: add your personal Gemini API key for nuanced recovery rationale, or let the built-in offline EvoLab heuristic engine guide you.
 
 ### 12 Material 3 Expressive Home Screen Widgets
-- Rendered on-device using Android 12+ Material You dynamic theming (`system_accent2_700` slate-indigo, `system_accent1_200` pastel blue, `system_accent3_200` lavender).
+- Pure Material You dynamic theming (Android 12+ / API 31+): dynamically adopts your wallpaper's system accent colors across all app surfaces and widgets with seamless dark/light mode switching.
 - Sculptural and geometric forms drawn with `androidx.graphics:graphics-shapes` (concentric dials, Cookie-12 scallops, contrast pods, split horizons).
 - Six widget slots, each supporting multiple interchangeable styles:
   1. **Weekly Mileage**: Mileage progress, remaining target, and Zone 2 distribution.

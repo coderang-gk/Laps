@@ -51,6 +51,7 @@ import io.github.coderang.laps.calendar.CalendarSyncManager
 import io.github.coderang.laps.calendar.PlanGenerator
 import io.github.coderang.laps.data.*
 import io.github.coderang.laps.notifications.LapsNotificationHelper
+import io.github.coderang.laps.ui.ExpressiveTheme
 import io.github.coderang.laps.ui.ExpressiveWidgetRenderer
 import io.github.coderang.laps.widgets.*
 import java.text.SimpleDateFormat
@@ -96,8 +97,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val context = LocalContext.current
-            val isDark = isSystemInDarkTheme()
-            val colorScheme = if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            val colorScheme = ExpressiveTheme.getComposeColorScheme(context)
 
             var payload by remember { mutableStateOf(LapsRepository.getCachedPayload()) }
             var isSyncing by remember { mutableStateOf(false) }
