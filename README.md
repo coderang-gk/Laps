@@ -31,31 +31,11 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 
 ## Screenshots
 
-<div align="center">
-  <img src="assets/screenshot_hub.jpg" width="31%" alt="Training Hub Dashboard" />
-  &nbsp;
-  <img src="assets/screenshot_coaching.jpg" width="31%" alt="Post-Run AI Coaching" />
-  &nbsp;
-  <img src="assets/screenshot_missed_resolution.jpg" width="31%" alt="Adaptive Skip & Shift Resolution" />
-</div>
-
-<p align="center">
-  <em>Training Hub Dashboard &bull; Post-Run AI Coaching &bull; Adaptive Skip & Shift Resolution</em>
-</p>
-
-<br />
-
-<div align="center">
-  <img src="assets/screenshot_plan_generator.jpg" width="31%" alt="Plan Generator" />
-  &nbsp;
-  <img src="assets/screenshot_widgets_catalog.jpg" width="31%" alt="Widget Catalog" />
-  &nbsp;
-  <img src="assets/screenshot_widgets_sculptural.jpg" width="31%" alt="Sculptural Widgets" />
-</div>
-
-<p align="center">
-  <em>80/20 Plan Generator &bull; Material 3 Widgets &bull; Sculptural Dials</em>
-</p>
+| <img width="256" src="assets/screenshot_hub.jpg"> | <img width="256" src="assets/screenshot_coaching.jpg"> | <img width="256" src="assets/screenshot_missed_resolution.jpg"> |
+|:---:|:---:|:---:|
+| Training Hub | Post-Run Coaching | Adaptive Resolution |
+| <img width="256" src="assets/screenshot_plan_generator.jpg"> | <img width="256" src="assets/screenshot_widgets_catalog.jpg"> | <img width="256" src="assets/screenshot_widgets_sculptural.jpg"> |
+| 80/20 Plan Generator | Material 3 Widgets | Sculptural Dials |
 
 ---
 
