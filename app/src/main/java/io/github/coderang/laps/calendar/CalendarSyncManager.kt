@@ -38,193 +38,309 @@ object CalendarSyncManager {
         val isSkipped: Boolean
     )
 
-    fun getAvailableCalendars(context: Context): List<CalendarInfo> {
-        val calendars = mutableListOf<CalendarInfo>()
-        val uri: Uri = CalendarContract.Calendars.CONTENT_URI
-        val projection = arrayOf(
-            CalendarContract.Calendars._ID,
-            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
-            CalendarContract.Calendars.ACCOUNT_NAME,
-            CalendarContract.Calendars.IS_PRIMARY
-        )
+    data class CalendarEventRecord(
+        val id: Long,
+        val calendarId: Long,
+        val title: String,
+        val description: String,
+        val startMillis: Long,
+        val endMillis: Long
+    )
 
-        try {
-            val cursor: Cursor? = context.contentResolver.query(
-                uri,
-                projection,
-                null,
-                null,
-                CalendarContract.Calendars.CALENDAR_DISPLAY_NAME + " ASC"
-            )
-            cursor?.use { c ->
-                val idIdx = c.getColumnIndexOrThrow(CalendarContract.Calendars._ID)
-                val nameIdx = c.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME)
-                val accIdx = c.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_NAME)
-                val primIdx = c.getColumnIndex(CalendarContract.Calendars.IS_PRIMARY)
-
-                while (c.moveToNext()) {
-                    val isPrim = if (primIdx != -1) c.getInt(primIdx) == 1 else false
-                    calendars.add(
-                        CalendarInfo(
-                            id = c.getLong(idIdx),
-                            displayName = c.getString(nameIdx) ?: "Calendar",
-                            accountName = c.getString(accIdx) ?: "",
-                            isPrimary = isPrim
-                        )
-                    )
-                }
-            }
-        } catch (_: SecurityException) {
-        }
-        return calendars
+    interface CalendarStore {
+        fun getAvailableCalendars(): List<CalendarInfo>
+        fun queryEvents(calendarId: Long, startMillis: Long, endMillis: Long): List<CalendarEventRecord>
+        fun queryEventById(eventId: Long): CalendarEventRecord?
+        fun updateEvent(eventId: Long, title: String, startMillis: Long, endMillis: Long): Boolean
+        fun insertEvent(calendarId: Long, title: String, description: String, startMillis: Long, endMillis: Long): Long?
     }
 
+    // Allows unit tests to inject an in-memory FakeCalendarStore on pure JVM
+    var storeProvider: ((Context?) -> CalendarStore)? = null
+
+    internal fun getStore(context: Context?): CalendarStore {
+        return storeProvider?.invoke(context) ?: AndroidCalendarStore(context!!)
+    }
+
+    private class AndroidCalendarStore(private val context: Context) : CalendarStore {
+        override fun getAvailableCalendars(): List<CalendarInfo> {
+            val calendars = mutableListOf<CalendarInfo>()
+            val uri: Uri = CalendarContract.Calendars.CONTENT_URI
+            val projection = arrayOf(
+                CalendarContract.Calendars._ID,
+                CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+                CalendarContract.Calendars.ACCOUNT_NAME,
+                CalendarContract.Calendars.IS_PRIMARY
+            )
+            try {
+                val cursor: Cursor? = context.contentResolver.query(
+                    uri,
+                    projection,
+                    null,
+                    null,
+                    CalendarContract.Calendars.CALENDAR_DISPLAY_NAME + " ASC"
+                )
+                cursor?.use { c ->
+                    val idIdx = c.getColumnIndexOrThrow(CalendarContract.Calendars._ID)
+                    val nameIdx = c.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME)
+                    val accIdx = c.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_NAME)
+                    val primIdx = c.getColumnIndex(CalendarContract.Calendars.IS_PRIMARY)
+
+                    while (c.moveToNext()) {
+                        val isPrim = if (primIdx != -1) c.getInt(primIdx) == 1 else false
+                        calendars.add(
+                            CalendarInfo(
+                                id = c.getLong(idIdx),
+                                displayName = c.getString(nameIdx) ?: "Calendar",
+                                accountName = c.getString(accIdx) ?: "",
+                                isPrimary = isPrim
+                            )
+                        )
+                    }
+                }
+            } catch (_: SecurityException) {}
+            return calendars
+        }
+
+        override fun queryEvents(calendarId: Long, startMillis: Long, endMillis: Long): List<CalendarEventRecord> {
+            val events = mutableListOf<CalendarEventRecord>()
+            val uri: Uri = CalendarContract.Events.CONTENT_URI
+            val projection = arrayOf(
+                CalendarContract.Events._ID,
+                CalendarContract.Events.CALENDAR_ID,
+                CalendarContract.Events.TITLE,
+                CalendarContract.Events.DESCRIPTION,
+                CalendarContract.Events.DTSTART,
+                CalendarContract.Events.DTEND
+            )
+            val selection = "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} <= ?"
+            val selectionArgs = arrayOf(calendarId.toString(), startMillis.toString(), endMillis.toString())
+
+            try {
+                val cursor = context.contentResolver.query(
+                    uri,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    "${CalendarContract.Events.DTSTART} ASC"
+                )
+                cursor?.use { c ->
+                    val idIdx = c.getColumnIndexOrThrow(CalendarContract.Events._ID)
+                    val calIdIdx = c.getColumnIndexOrThrow(CalendarContract.Events.CALENDAR_ID)
+                    val titleIdx = c.getColumnIndexOrThrow(CalendarContract.Events.TITLE)
+                    val descIdx = c.getColumnIndex(CalendarContract.Events.DESCRIPTION)
+                    val startIdx = c.getColumnIndexOrThrow(CalendarContract.Events.DTSTART)
+                    val endIdx = c.getColumnIndex(CalendarContract.Events.DTEND)
+
+                    while (c.moveToNext()) {
+                        val s = c.getLong(startIdx)
+                        val e = if (endIdx != -1) c.getLong(endIdx) else s + 3600000L
+                        events.add(
+                            CalendarEventRecord(
+                                id = c.getLong(idIdx),
+                                calendarId = c.getLong(calIdIdx),
+                                title = c.getString(titleIdx) ?: "",
+                                description = if (descIdx != -1) c.getString(descIdx) ?: "" else "",
+                                startMillis = s,
+                                endMillis = e
+                            )
+                        )
+                    }
+                }
+            } catch (_: SecurityException) {}
+            return events
+        }
+
+        override fun queryEventById(eventId: Long): CalendarEventRecord? {
+            return try {
+                val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+                val cursor = context.contentResolver.query(
+                    uri,
+                    arrayOf(
+                        CalendarContract.Events._ID,
+                        CalendarContract.Events.CALENDAR_ID,
+                        CalendarContract.Events.TITLE,
+                        CalendarContract.Events.DESCRIPTION,
+                        CalendarContract.Events.DTSTART,
+                        CalendarContract.Events.DTEND
+                    ),
+                    null,
+                    null,
+                    null
+                )
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        val s = it.getLong(4)
+                        val e = it.getLong(5)
+                        CalendarEventRecord(
+                            id = it.getLong(0),
+                            calendarId = it.getLong(1),
+                            title = it.getString(2) ?: "",
+                            description = it.getString(3) ?: "",
+                            startMillis = s,
+                            endMillis = if (e > s) e else s + 3600000L
+                        )
+                    } else null
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        override fun updateEvent(eventId: Long, title: String, startMillis: Long, endMillis: Long): Boolean {
+            return try {
+                val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+                val values = ContentValues().apply {
+                    put(CalendarContract.Events.TITLE, title)
+                    put(CalendarContract.Events.DTSTART, startMillis)
+                    put(CalendarContract.Events.DTEND, endMillis)
+                }
+                context.contentResolver.update(uri, values, null, null) > 0
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        override fun insertEvent(
+            calendarId: Long,
+            title: String,
+            description: String,
+            startMillis: Long,
+            endMillis: Long
+        ): Long? {
+            return try {
+                val values = ContentValues().apply {
+                    put(CalendarContract.Events.CALENDAR_ID, calendarId)
+                    put(CalendarContract.Events.TITLE, title)
+                    put(CalendarContract.Events.DESCRIPTION, description)
+                    put(CalendarContract.Events.DTSTART, startMillis)
+                    put(CalendarContract.Events.DTEND, endMillis)
+                    put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+                }
+                val newUri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+                newUri?.lastPathSegment?.toLongOrNull()
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    fun getAvailableCalendars(context: Context? = null): List<CalendarInfo> =
+        getStore(context).getAvailableCalendars()
+
     fun getPlannedWorkouts(
-        context: Context,
+        context: Context? = null,
         calendarId: Long,
         startMillis: Long,
         endMillis: Long
     ): List<PlannedWorkout> {
+        val records = getStore(context).queryEvents(calendarId, startMillis, endMillis)
         val workouts = mutableListOf<PlannedWorkout>()
-        val uri: Uri = CalendarContract.Events.CONTENT_URI
-        val projection = arrayOf(
-            CalendarContract.Events._ID,
-            CalendarContract.Events.TITLE,
-            CalendarContract.Events.DESCRIPTION,
-            CalendarContract.Events.DTSTART
-        )
-        val selection = "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} <= ?"
-        val selectionArgs = arrayOf(calendarId.toString(), startMillis.toString(), endMillis.toString())
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
-        try {
-            val cursor: Cursor? = context.contentResolver.query(
-                uri,
-                projection,
-                selection,
-                selectionArgs,
-                "${CalendarContract.Events.DTSTART} ASC"
+        for (rec in records) {
+            val dateStr = sdf.format(Date(rec.startMillis))
+            val (dist, wType, pace, zone) = parseWorkoutMetadata(rec.title, rec.description)
+            val isDone = rec.title.contains("✅") || rec.title.uppercase(Locale.US).contains("[DONE]")
+            val isSkip = rec.title.uppercase(Locale.US).contains("[SKIPPED]")
+
+            workouts.add(
+                PlannedWorkout(
+                    eventId = rec.id,
+                    title = rec.title,
+                    description = rec.description,
+                    startMillis = rec.startMillis,
+                    dateString = dateStr,
+                    targetDistanceKm = dist,
+                    workoutType = wType,
+                    targetPace = pace,
+                    targetHrZone = zone,
+                    isCompleted = isDone,
+                    isSkipped = isSkip
+                )
             )
-            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-
-            cursor?.use { c ->
-                val idIdx = c.getColumnIndexOrThrow(CalendarContract.Events._ID)
-                val titleIdx = c.getColumnIndexOrThrow(CalendarContract.Events.TITLE)
-                val descIdx = c.getColumnIndex(CalendarContract.Events.DESCRIPTION)
-                val startIdx = c.getColumnIndexOrThrow(CalendarContract.Events.DTSTART)
-
-                while (c.moveToNext()) {
-                    val title = c.getString(titleIdx) ?: ""
-                    val desc = if (descIdx != -1) c.getString(descIdx) ?: "" else ""
-                    val start = c.getLong(startIdx)
-                    val dateStr = sdf.format(Date(start))
-
-                    val (dist, wType, pace, zone) = parseWorkoutMetadata(title, desc)
-                    val isDone = title.contains("✅") || title.uppercase().contains("[DONE]")
-                    val isSkip = title.uppercase().contains("[SKIPPED]")
-
-                    workouts.add(
-                        PlannedWorkout(
-                            eventId = c.getLong(idIdx),
-                            title = title,
-                            description = desc,
-                            startMillis = start,
-                            dateString = dateStr,
-                            targetDistanceKm = dist,
-                            workoutType = wType,
-                            targetPace = pace,
-                            targetHrZone = zone,
-                            isCompleted = isDone,
-                            isSkipped = isSkip
-                        )
-                    )
-                }
-            }
-        } catch (_: SecurityException) {
         }
         return workouts
     }
 
-    fun skipWorkout(context: Context, eventId: Long): Boolean {
+    fun skipWorkout(context: Context? = null, eventId: Long): Boolean {
         return try {
-            val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
-            val cursor = context.contentResolver.query(uri, arrayOf(CalendarContract.Events.TITLE), null, null, null)
-            var currentTitle = ""
-            cursor?.use { if (it.moveToFirst()) currentTitle = it.getString(0) ?: "" }
+            val store = getStore(context)
+            val event = store.queryEventById(eventId) ?: return false
 
-            if (!currentTitle.startsWith("[SKIPPED]")) {
-                val values = ContentValues().apply {
-                    put(CalendarContract.Events.TITLE, "[SKIPPED] $currentTitle")
-                }
-                context.contentResolver.update(uri, values, null, null) > 0
+            if (!event.title.startsWith("[SKIPPED]")) {
+                val newTitle = "[SKIPPED] ${event.title}"
+                store.updateEvent(eventId, newTitle, event.startMillis, event.endMillis)
             } else true
         } catch (_: Exception) {
             false
         }
     }
 
-    fun shiftWorkout(context: Context, eventId: Long, newDateMillis: Long): Boolean {
+    fun shiftWorkout(context: Context? = null, eventId: Long, newDateMillis: Long): Boolean {
         return try {
-            val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
-            val cursor = context.contentResolver.query(
-                uri,
-                arrayOf(CalendarContract.Events.TITLE, CalendarContract.Events.DTSTART, CalendarContract.Events.DTEND),
-                null,
-                null,
-                null
-            )
-            var title = ""
-            var oldStart = 0L
-            var oldEnd = 0L
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    title = it.getString(0) ?: ""
-                    oldStart = it.getLong(1)
-                    oldEnd = it.getLong(2)
-                }
-            }
+            val store = getStore(context)
+            val event = store.queryEventById(eventId) ?: return false
 
-            val duration = if (oldEnd > oldStart) oldEnd - oldStart else 3600000L
-            val cleanTitle = title.replace("[SKIPPED] ", "").trim()
+            val duration = if (event.endMillis > event.startMillis) event.endMillis - event.startMillis else 3600000L
+            val rawTitle = event.title.replace("[SKIPPED] ", "").trim()
 
-            val values = ContentValues().apply {
-                put(CalendarContract.Events.TITLE, cleanTitle)
-                put(CalendarContract.Events.DTSTART, newDateMillis)
-                put(CalendarContract.Events.DTEND, newDateMillis + duration)
+            // Align newDateMillis to the hour and minute of the original scheduled start
+            val oldCal = Calendar.getInstance().apply { timeInMillis = event.startMillis }
+            val newCal = Calendar.getInstance().apply {
+                timeInMillis = newDateMillis
+                set(Calendar.HOUR_OF_DAY, oldCal.get(Calendar.HOUR_OF_DAY))
+                set(Calendar.MINUTE, oldCal.get(Calendar.MINUTE))
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
             }
-            context.contentResolver.update(uri, values, null, null) > 0
+            val actualNewStart = newCal.timeInMillis
+
+            // Update day-of-week abbreviation in title (e.g. W3 Tue -> W3 Wed)
+            val cleanTitle = updateDayAbbrInTitle(rawTitle, actualNewStart)
+
+            store.updateEvent(eventId, cleanTitle, actualNewStart, actualNewStart + duration)
         } catch (_: Exception) {
             false
         }
     }
 
+    internal fun updateDayAbbrInTitle(title: String, dateMillis: Long): String {
+        val cal = Calendar.getInstance().apply { timeInMillis = dateMillis }
+        val newDayStr = when (cal.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> "Mon"
+            Calendar.TUESDAY -> "Tue"
+            Calendar.WEDNESDAY -> "Wed"
+            Calendar.THURSDAY -> "Thu"
+            Calendar.FRIDAY -> "Fri"
+            Calendar.SATURDAY -> "Sat"
+            Calendar.SUNDAY -> "Sun"
+            else -> return title
+        }
+        return title.replace(Regex("\\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\\b"), newDayStr)
+    }
+
     fun insertWorkoutEvent(
-        context: Context,
+        context: Context? = null,
         calendarId: Long,
         title: String,
         description: String,
         startMillis: Long,
         durationMinutes: Int = 60
     ): Long? {
-        return try {
-            val values = ContentValues().apply {
-                put(CalendarContract.Events.CALENDAR_ID, calendarId)
-                put(CalendarContract.Events.TITLE, title)
-                put(CalendarContract.Events.DESCRIPTION, description)
-                put(CalendarContract.Events.DTSTART, startMillis)
-                put(CalendarContract.Events.DTEND, startMillis + durationMinutes * 60000L)
-                put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
-            }
-            val newUri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
-            newUri?.lastPathSegment?.toLongOrNull()
-        } catch (_: Exception) {
-            null
-        }
+        val store = getStore(context)
+        return store.insertEvent(
+            calendarId = calendarId,
+            title = title,
+            description = description,
+            startMillis = startMillis,
+            endMillis = startMillis + durationMinutes * 60000L
+        )
     }
 
-    private data class ParsedMeta(val dist: Double, val type: String, val pace: String, val zone: String)
+    internal data class ParsedMeta(val dist: Double, val type: String, val pace: String, val zone: String)
 
-    private fun parseWorkoutMetadata(title: strig, description: String): ParsedMeta {
-        // Safe regex parsing for distance, pace, and zones
+    internal fun parseWorkoutMetadata(title: String, description: String): ParsedMeta {
         val combined = "$title $description".lowercase(Locale.US)
         var dist = 0.0
 
@@ -243,10 +359,10 @@ object CalendarSyncManager {
         }
 
         var wType = "Easy Run"
-        if (combined.contains("interval") || combined.contains("reps") || combined.contains("speed")) {
-            wType = "Intervals"
-        } else if (combined.contains("threshold") || combined.contains("tempo") || combined.contains("2x")) {
+        if (combined.contains("threshold") || combined.contains("tempo")) {
             wType = "Threshold"
+        } else if (combined.contains("interval") || combined.contains("reps") || combined.contains("speed")) {
+            wType = "Intervals"
         } else if (combined.contains("long") || dist >= 14.0) {
             wType = "Long Run"
         } else if (combined.contains("stride")) {
@@ -276,4 +392,3 @@ object CalendarSyncManager {
         return ParsedMeta(dist, wType, pace, zone)
     }
 }
-typealias strig = String

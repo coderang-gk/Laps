@@ -39,25 +39,25 @@ class CorosApiClient(
     )
 
     data class CorosActivity(
-        val activityId: String,
-        val name: String,
-        val sportType: Int,
-        val timestamp: Long,
-        val dateOnly: String,
-        val distanceKm: Double,
-        val durationSeconds: Int,
-        val durationMinutes: Double,
-        val avgPace: String,
-        val avgPaceSec: Int,
-        val avgHr: Int,
-        val maxHr: Int,
-        val cadence: Int,
-        val powerWatts: Int,
-        val trainingLoad: Int,
-        val aerobicTe: Double,
-        val anaerobicTe: Double,
-        val elevGainM: Double,
-        val caloriesKcal: Int
+        val activityId: String = "",
+        val name: String = "",
+        val sportType: Int = 100,
+        val timestamp: Long = 0L,
+        val dateOnly: String = "",
+        val distanceKm: Double = 0.0,
+        val durationSeconds: Int = 0,
+        val durationMinutes: Double = 0.0,
+        val avgPace: String = "5:00",
+        val avgPaceSec: Int = 300,
+        val avgHr: Int = 150,
+        val maxHr: Int = 170,
+        val cadence: Int = 160,
+        val powerWatts: Int = 220,
+        val trainingLoad: Int = 100,
+        val aerobicTe: Double = 3.0,
+        val anaerobicTe: Double = 0.5,
+        val elevGainM: Double = 0.0,
+        val caloriesKcal: Int = 500
     )
 
     private fun md5(input: String): String {

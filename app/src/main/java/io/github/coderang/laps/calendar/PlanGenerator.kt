@@ -27,7 +27,7 @@ object PlanGenerator {
     )
 
     fun generatePlan(
-        context: Context,
+        context: Context? = null,
         calendarId: Long,
         raceDistance: RaceDistance,
         raceDateMillis: Long,
