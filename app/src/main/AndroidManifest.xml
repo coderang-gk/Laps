@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 1. Weekly Mileage & Engine Hero (4x2) -->
+        <receiver
+            android:name=".widgets.WeeklyMileageWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_weekly_mileage_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+                <action android:name="android.intent.action.WALLPAPER_CHANGED" />
+                <action android:name="io.github.coderang.laps.ACTION_FORCE_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_weekly_mileage_info" />
+        </receiver>
+
+        <!-- 2. Acute Load & Readiness (2x2) -->
+        <receiver
+            android:name=".widgets.TrainingLoadWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_training_load_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+                <action android:name="android.intent.action.WALLPAPER_CHANGED" />
+                <action android:name="io.github.coderang.laps.ACTION_FORCE_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_training_load_info" />
+        </receiver>
+
+        <!-- 3. Next Workout Target Pill (4x1) -->
+        <receiver
+            android:name=".widgets.NextWorkoutWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_next_workout_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+                <action android:name="android.intent.action.WALLPAPER_CHANGED" />
+                <action android:name="io.github.coderang.laps.ACTION_FORCE_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_next_workout_info" />
+        </receiver>
+
+        <!-- 4. Zone 2 vs Speed Spectrum (2x2) -->
+        <receiver
+            android:name=".widgets.ZoneSpectrumWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_zone_spectrum_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+                <action android:name="android.intent.action.WALLPAPER_CHANGED" />
+                <action android:name="io.github.coderang.laps.ACTION_FORCE_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_zone_spectrum_info" />
+        </receiver>
+
+        <!-- 5. Race Countdown (4x2) -->
+        <receiver
+            android:name=".widgets.RaceCountdownWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_race_countdown_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+                <action android:name="android.intent.action.WALLPAPER_CHANGED" />
+                <action android:name="io.github.coderang.laps.ACTION_FORCE_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_race_countdown_info" />
+        </receiver>
+
+        <!-- 6. Flagship Command Center (4x4) -->
+        <receiver
+            android:name=".widgets.CommandCenterWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_command_center_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.CONFIGURATION_CHANGED" />
+                <action android:name="android.intent.action.WALLPAPER_CHANGED" />
+                <action android:name="io.github.coderang.laps.ACTION_FORCE_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_command_center_info" />
+        </receiver>
+
+    </application>
+</manifest>

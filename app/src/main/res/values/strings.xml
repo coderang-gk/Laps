@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Laps</string>
+    <string name="widget_weekly_mileage_label">Laps · Weekly Mileage</string>
+    <string name="widget_weekly_mileage_desc">Weekly mileage progress, pace targets, and zone balance.</string>
+    <string name="widget_training_load_label">Laps · Training Load</string>
+    <string name="widget_training_load_desc">EvoLab training load, fatigue index, and readiness.</string>
+    <string name="widget_next_workout_label">Laps · Next Workout</string>
+    <string name="widget_next_workout_desc">Upcoming scheduled workout and Google Calendar training runs.</string>
+    <string name="widget_zone_spectrum_label">Laps · 80/20 Zone Balance</string>
+    <string name="widget_zone_spectrum_desc">Aerobic base vs lactate threshold volume distribution.</string>
+    <string name="widget_race_countdown_label">Laps · Race Countdown</string>
+    <string name="widget_race_countdown_desc">Target race countdown, distance, and goal pace.</string>
+    <string name="widget_command_center_label">Laps · Command Center</string>
+    <string name="widget_command_center_desc">Full athlete overview with weekly mileage and next workouts.</string>
+</resources>
