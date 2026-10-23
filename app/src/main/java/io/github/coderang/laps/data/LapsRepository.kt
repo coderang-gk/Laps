@@ -24,6 +24,24 @@ object LapsRepository {
     private const val KEY_GOAL_TIME = "goal_time"
     private const val KEY_GOAL_PACE = "goal_pace"
     private const val KEY_GEMINI_KEY = "gemini_api_key"
+    private const val KEY_SETUP_COMPLETED = "setup_completed"
+
+    fun isSetupCompleted(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_SETUP_COMPLETED, false)
+    }
+
+    fun setSetupCompleted(context: Context, completed: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SETUP_COMPLETED, completed)
+            .apply()
+    }
+
+    fun hasCredentials(context: Context): Boolean {
+        val (email, pwd) = getCorosCredentials(context)
+        return email.isNotBlank() && pwd.isNotBlank()
+    }
 
     fun getCorosCredentials(context: Context): Pair<String, String> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
