@@ -89,6 +89,8 @@ class MainActivity : ComponentActivity() {
         WidgetCatalogItem(11, "EvoLab Splits", "4-row pace & HR table", "2×2", "CARDS", ExpressiveTileType.COMMAND_CENTER)
     )
 
+    private var oauthRefreshTrigger by mutableIntStateOf(0)
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.data?.let { uri ->
@@ -97,6 +99,7 @@ class MainActivity : ComponentActivity() {
                 if (!token.isNullOrBlank()) {
                     LapsRepository.saveCorosToken(this, token)
                     LapsRepository.setSetupCompleted(this, true)
+                    oauthRefreshTrigger++
                     Toast.makeText(this, "COROS OAuth 2.0 Connected!", Toast.LENGTH_SHORT).show()
                     LapsWidgetUpdateHelper.refreshAllWidgetsAsync(this)
                 }
@@ -116,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 if (!token.isNullOrBlank()) {
                     LapsRepository.saveCorosToken(this, token)
                     LapsRepository.setSetupCompleted(this, true)
+                    oauthRefreshTrigger++
                     Toast.makeText(this, "COROS OAuth 2.0 Connected!", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -127,14 +131,15 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             val colorScheme = ExpressiveTheme.getComposeColorScheme(context)
 
-            var payload by remember { mutableStateOf(LapsRepository.getCachedPayload()) }
+            val trigger = oauthRefreshTrigger
+            var payload by remember(trigger) { mutableStateOf(LapsRepository.getCachedPayload()) }
             var isSyncing by remember { mutableStateOf(false) }
             var selectedSection by remember { mutableIntStateOf(0) } // 0 = Training Hub, 1 = Widgets
             var selectedFilter by remember { mutableIntStateOf(0) } // 0 = All, 1 = Sculptural, 2 = Cards
             var showSettingsDialog by remember { mutableStateOf(false) }
             var showPlanDialog by remember { mutableStateOf(false) }
-            val hasCredentials = remember { LapsRepository.hasCredentials(context) }
-            var showOnboarding by remember { mutableStateOf(!hasCredentials && !LapsRepository.isSetupCompleted(context)) }
+            val hasCredentials = remember(trigger) { LapsRepository.hasCredentials(context) }
+            var showOnboarding by remember(trigger) { mutableStateOf(!hasCredentials && !LapsRepository.isSetupCompleted(context)) }
             var isResolvingMissed by remember { mutableStateOf(false) }
             var selectedRunForDetail by remember {
                 mutableStateOf(if (shouldOpenRunDetailFromIntent) payload.lastRun else null)
@@ -440,7 +445,8 @@ private fun MainAppScaffold(
                 onResolveMissedWorkout = onResolveMissedWorkout,
                 isResolvingMissed = isResolvingMissed,
                 onConnectAccountClicked = onConnectAccountClicked,
-                onPlanClicked = onPlanClicked
+                onPlanClicked = onPlanClicked,
+                onBrowseWidgetsClicked = { onSectionSelected(1) }
             )
         } else {
             WidgetsGallerySection(
@@ -464,7 +470,8 @@ private fun TrainingHubSection(
     onResolveMissedWorkout: (String, String) -> Unit = { _, _ -> },
     isResolvingMissed: Boolean = false,
     onConnectAccountClicked: () -> Unit = {},
-    onPlanClicked: () -> Unit = {}
+    onPlanClicked: () -> Unit = {},
+    onBrowseWidgetsClicked: () -> Unit = {}
 ) {
     val runs = payload.recentRuns.ifEmpty { listOf(payload.lastRun) }
     val latest = runs.first()
@@ -486,32 +493,39 @@ private fun TrainingHubSection(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(16.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Sample Data Mode",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Connect your COROS account to sync your live training runs and widgets.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Button(
-                            onClick = onConnectAccountClicked,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        Text(
+                            text = "Sample Data Mode",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "You can add and customize home screen widgets right away with demo metrics. Connect your COROS account whenever you're ready to sync live data.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Connect")
+                            Button(
+                                onClick = onConnectAccountClicked,
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Text("Connect Account")
+                            }
+                            OutlinedButton(
+                                onClick = onBrowseWidgetsClicked
+                            ) {
+                                Text("Browse Widgets")
+                            }
                         }
                     }
                 }
@@ -1745,6 +1759,8 @@ private fun LapsOnboardingDialog(
     onConnected: () -> Unit
 ) {
     val context = LocalContext.current
+    var isOAuthMode by remember { mutableStateOf(true) }
+    var token by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -1799,56 +1815,146 @@ private fun LapsOnboardingDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth()
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "• 100% on-device sync with teamapi.coros.com\n• Tracks scheduled runs via Google Calendar\n• 12 Material 3 dynamic widgets",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 20.sp
-                        )
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = rememberShieldVector(),
+                                    contentDescription = "Privacy Shield",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Column {
+                            Text(
+                                text = "Zero Cloud • On-Device Sandboxing",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Tokens and credentials stay 100% inside your device sandbox. Connect password-free via official COROS OAuth / MCP.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                // Auth Method Tabs
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = { isOAuthMode = true; errorMessage = null },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("OAuth 2.0 / MCP", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
+                    FilledTonalButton(
+                        onClick = { isOAuthMode = false; errorMessage = null },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (!isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = if (!isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("Direct Login", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
 
-                Text(
-                    text = "COROS Training Hub Account",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Credentials remain stored securely on your phone.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it; errorMessage = null },
-                    label = { Text("COROS Email") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it; errorMessage = null },
-                    label = { Text("COROS Password") },
-                    singleLine = true,
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Text(if (passwordVisible) "Hide" else "Show", fontSize = 12.sp)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (isOAuthMode) {
+                    Text(
+                        text = "Official COROS OAuth 2.0 / MCP",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Password-free Bearer token authentication via Model Context Protocol (mcp.coros.com).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it; errorMessage = null },
+                        label = { Text("COROS OAuth Bearer Token") },
+                        placeholder = { Text("Paste Bearer token from mcp.coros.com") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            val authUri = android.net.Uri.parse("https://mcpus.coros.com/oauth2/authorize?client_id=laps-android&response_type=code&redirect_uri=laps://oauth/callback&scope=openid%20mcp.tools%20offline_access")
+                            val browserIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, authUri)
+                            context.startActivity(browserIntent)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Open COROS OAuth Portal (Browser)")
+                    }
+                } else {
+                    Text(
+                        text = "Direct COROS Training Hub Account",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Direct on-device sync with teamapi.coros.com. Credentials remain encrypted in private app storage.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it; errorMessage = null },
+                        label = { Text("COROS Email") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it; errorMessage = null },
+                        label = { Text("COROS Password") },
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            TextButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Text(if (passwordVisible) "Hide" else "Show", fontSize = 12.sp)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -1936,28 +2042,53 @@ private fun LapsOnboardingDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (email.isBlank() || password.isBlank()) {
-                        errorMessage = "Please enter your COROS email and password."
-                        return@Button
-                    }
-                    isLoggingIn = true
-                    errorMessage = null
-                    Thread {
-                        val client = io.github.coderang.laps.coros.CorosApiClient()
-                        val loginRes = client.login(email.trim(), password.trim())
-                        (context as? ComponentActivity)?.runOnUiThread {
-                            isLoggingIn = false
-                            loginRes.onSuccess {
-                                LapsRepository.saveCorosCredentials(context, email.trim(), password.trim())
-                                LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
-                                LapsRepository.setSetupCompleted(context, true)
-                                Toast.makeText(context, "Connected to COROS Training Hub!", Toast.LENGTH_SHORT).show()
-                                onConnected()
-                            }.onFailure { err ->
-                                errorMessage = "COROS Login failed: ${err.message ?: "Invalid credentials"}"
-                            }
+                    if (isOAuthMode) {
+                        if (token.isBlank()) {
+                            errorMessage = "Please paste your COROS Bearer token or connect in browser."
+                            return@Button
                         }
-                    }.start()
+                        isLoggingIn = true
+                        errorMessage = null
+                        Thread {
+                            val client = io.github.coderang.laps.coros.CorosApiClient()
+                            val authRes = client.authenticateWithToken(token.trim())
+                            (context as? ComponentActivity)?.runOnUiThread {
+                                isLoggingIn = false
+                                authRes.onSuccess {
+                                    LapsRepository.saveCorosToken(context, token.trim())
+                                    LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                    LapsRepository.setSetupCompleted(context, true)
+                                    Toast.makeText(context, "Connected via COROS OAuth!", Toast.LENGTH_SHORT).show()
+                                    onConnected()
+                                }.onFailure { err ->
+                                    errorMessage = "OAuth Token Error: ${err.message ?: "Invalid token"}"
+                                }
+                            }
+                        }.start()
+                    } else {
+                        if (email.isBlank() || password.isBlank()) {
+                            errorMessage = "Please enter your COROS email and password."
+                            return@Button
+                        }
+                        isLoggingIn = true
+                        errorMessage = null
+                        Thread {
+                            val client = io.github.coderang.laps.coros.CorosApiClient()
+                            val loginRes = client.login(email.trim(), password.trim())
+                            (context as? ComponentActivity)?.runOnUiThread {
+                                isLoggingIn = false
+                                loginRes.onSuccess {
+                                    LapsRepository.saveCorosCredentials(context, email.trim(), password.trim())
+                                    LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                    LapsRepository.setSetupCompleted(context, true)
+                                    Toast.makeText(context, "Connected to COROS Training Hub!", Toast.LENGTH_SHORT).show()
+                                    onConnected()
+                                }.onFailure { err ->
+                                    errorMessage = "COROS Login failed: ${err.message ?: "Invalid credentials"}"
+                                }
+                            }
+                        }.start()
+                    }
                 },
                 enabled = !isLoggingIn
             ) {
@@ -1980,7 +2111,7 @@ private fun LapsOnboardingDialog(
                 },
                 enabled = !isLoggingIn
             ) {
-                Text("Explore Demo Mode")
+                Text("Use Widgets (Demo Mode)")
             }
         }
     )
