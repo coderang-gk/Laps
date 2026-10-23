@@ -204,6 +204,42 @@ data class LastRunData(
     val stages: List<RunSplitItem> = emptyList()
 ) {
     companion object {
+        fun empty(): LastRunData = LastRunData(
+            name = "No Runs Synced",
+            date = "--",
+            dayLabel = "--",
+            distanceKm = 0.0,
+            plannedKm = 0.0,
+            adherencePct = 0,
+            verdictBadge = "No Data",
+            durationMinutes = 0.0,
+            avgPace = "--:--",
+            avgHr = 0,
+            maxHr = 0,
+            cadence = 0,
+            maxCadence = 0,
+            powerWatts = 0,
+            maxPowerWatts = 0,
+            strideLengthCm = 0,
+            trainingLoad = 0,
+            aerobicTe = 0.0,
+            anaerobicTe = 0.0,
+            vo2Max = 0,
+            stamina7d = 0.0,
+            bestKmPace = "--:--",
+            elevGainM = 0,
+            caloriesKcal = 0,
+            physiologyNote = "No workout recorded yet.",
+            coachGuidance = "Log a workout with your COROS watch to view live physiological analysis.",
+            aiVerdictHeadline = "No Recent Activities",
+            aiExecutiveSummary = "Connect and record a workout with your COROS watch to view live on-device EvoLab physiological analysis and pacing metrics.",
+            aiInsights = emptyList(),
+            aiTips = emptyList(),
+            hrZones = emptyList(),
+            splits = emptyList(),
+            stages = emptyList()
+        )
+
         fun defaultInsights(): List<String> = listOf(
             "Aerobic Discipline: Base block stayed comfortably below your threshold, protecting heart rate instead of forcing pace.",
             "Neuromuscular Strides: Strides recruited fast-twitch fibers smoothly without building systemic fatigue.",

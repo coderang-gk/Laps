@@ -159,23 +159,31 @@ object LapsRepository {
             val activities = actResult.getOrNull() ?: emptyList()
 
             // 1. Calculate current week (Monday..Sunday)
-            val cal = Calendar.getInstance().apply {
-                firstDayOfWeek = Calendar.MONDAY
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-            }
-            val todayDate = cal.time
-            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-            val todayStr = sdf.format(todayDate)
-
-            cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-            val mondayMillis = cal.timeInMillis
+            val cal = Calendar.getInstance()
+            val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+            val daysFromMonday = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - Calendar.MONDAY
+            cal.add(Calendar.DAY_OF_YEAR, -daysFromMonday)
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
             val mondayDate = cal.time
-            cal.add(Calendar.DAY_OF_YEAR, 6)
-            cal.set(Calendar.HOUR_OF_DAY, 23)
-            cal.set(Calendar.MINUTE, 59)
-            val sundayMillis = cal.timeInMillis
+            val mondayMillis = cal.timeInMillis
+
+            val sunCal = Calendar.getInstance().apply {
+                time = mondayDate
+                add(Calendar.DAY_OF_YEAR, 6)
+                set(Calendar.HOUR_OF_DAY, 23)
+                set(Calendar.MINUTE, 59)
+                set(Calendar.SECOND, 59)
+                set(Calendar.MILLISECOND, 999)
+            }
+            val sundayDate = sunCal.time
+            val sundayMillis = sunCal.timeInMillis
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val todayStr = sdf.format(Date())
+            val mondayStr = sdf.format(mondayDate)
+            val sundayStr = sdf.format(sundayDate)
 
             // 2. Query Calendar for Planned Workouts (Mon..Sun + 10 days)
             val calId = getSelectedCalendarId(context)
@@ -203,20 +211,20 @@ object LapsRepository {
             for (i in 0 until 7) {
                 val dStr = sdf.format(iterCal.time)
                 val dayActs = activitiesByDate[dStr] ?: emptyList()
-                val actualKm = dayActs.sumOf { it.distanceKm }
+                val dayActualKm = dayActs.sumOf { it.distanceKm }
                 val planned = plannedByDate[dStr]
-                val plannedKm = planned?.targetDistanceKm ?: (if (actualKm > 0) actualKm else 0.0)
+                val dayPlannedKm = planned?.targetDistanceKm ?: (if (dayActualKm > 0) dayActualKm else 0.0)
 
-                actualWkKm += actualKm
-                plannedWkKm += plannedKm
-                if (actualKm > 0) runsDone++
+                actualWkKm += dayActualKm
+                plannedWkKm += dayPlannedKm
+                if (dayActualKm > 0) runsDone++
 
                 val isToday = dStr == todayStr
                 val status = when {
-                    actualKm > 0 -> "COMPLETED"
-                    isToday && plannedKm > 0 -> "TODAY"
-                    dStr > todayStr && plannedKm > 0 -> "PLANNED"
-                    dStr < todayStr && plannedKm > 0 -> "MISSED"
+                    dayActualKm > 0 -> "COMPLETED"
+                    isToday && dayPlannedKm > 0 -> "TODAY"
+                    dStr > todayStr && dayPlannedKm > 0 -> "PLANNED"
+                    dStr < todayStr && dayPlannedKm > 0 -> "MISSED"
                     else -> "REST"
                 }
 
@@ -227,17 +235,17 @@ object LapsRepository {
                         dayName = dayNames[i],
                         date = dStr,
                         isToday = isToday,
-                        actualKm = ((actualKm * 100).toInt()) / 100.0,
-                        plannedKm = ((plannedKm * 100).toInt()) / 100.0,
+                        actualKm = ((dayActualKm * 100).toInt()) / 100.0,
+                        plannedKm = ((dayPlannedKm * 100).toInt()) / 100.0,
                         status = status,
-                        workoutType = planned?.workoutType ?: if (actualKm > 0) "Run" else "Rest"
+                        workoutType = planned?.workoutType ?: if (dayActualKm > 0) "Run" else "Rest"
                     )
                 )
                 iterCal.add(Calendar.DAY_OF_YEAR, 1)
             }
 
             actualWkKm = ((actualWkKm * 100).toInt()) / 100.0
-            plannedWkKm = ((plannedWkKm * 100).toInt()) / 100.0
+            plannedWkKm = if (calId != -1L) ((plannedWkKm * 100).toInt()) / 100.0 else actualWkKm
             val completionPct = if (plannedWkKm > 0) ((actualWkKm / plannedWkKm) * 100.0 + 0.5).toInt() else 0
 
             // 4. Upcoming Workout (only populate if planned in calendar; otherwise clean metrics-only state)
@@ -267,24 +275,60 @@ object LapsRepository {
             }
 
             // 5. Training Load & 80/20 Zone Spectrum
-            val wkRuns = activities.filter { it.dateOnly >= sdf.format(mondayDate) && it.dateOnly <= sdf.format(sundayMillis) }
+            val wkRuns = activities.filter { it.dateOnly in mondayStr..sundayStr }
             val acuteTl = wkRuns.sumOf { it.trainingLoad }
-            val easyKm = wkRuns.filter { it.avgHr < 162 }.sumOf { it.distanceKm }
+            val totalWeekSec = wkRuns.sumOf { it.durationSeconds }
+            val wkAvgPace = if (actualWkKm > 0 && totalWeekSec > 0) {
+                val secPerKm = (totalWeekSec / actualWkKm).toInt()
+                "%d:%02d /km".format(secPerKm / 60, secPerKm % 60)
+            } else "--:--"
+            val totalElev = wkRuns.sumOf { it.elevGainM }.toInt()
+            val easyKm = wkRuns.filter { it.avgHr < (profile.lthr * 0.901).toInt() }.sumOf { it.distanceKm }
             val aeroPct = if (actualWkKm > 0) ((easyKm / actualWkKm) * 100.0 + 0.5).toInt().coerceIn(30, 95) else 78
 
-            // 6. Post-Run Analysis for Recent Runs
+            val targetTlMax = 580
+            val targetTlMin = 380
+            val tlStatus = when {
+                acuteTl > targetTlMax * 1.1 -> "OVERREACHING"
+                acuteTl >= targetTlMin * 0.65 -> "PRODUCTIVE"
+                acuteTl > 0 -> "BUILDING"
+                else -> "RESTING"
+            }
+            val loadRatio = if (targetTlMax > 0) ((acuteTl.toDouble() / targetTlMax.toDouble()) * 100.0).toInt().coerceIn(0, 100) else 0
+
             val lastRunAct = activities.firstOrNull()
+            val lastRunTs = lastRunAct?.timestamp ?: 0L
+            val elapsedHours = if (lastRunTs > 0) Math.max(0.0, (System.currentTimeMillis() / 1000.0 - lastRunTs) / 3600.0) else 0.0
+            val remainingRecoveryH = Math.max(2, (Math.max(0.0, 18.0 - elapsedHours) + 0.5).toInt())
+            val readinessScore = Math.max(65, Math.min(98, 94 - (remainingRecoveryH * 0.6).toInt()))
+
+            // 6. Post-Run Analysis for Recent Runs
             val recentList = mutableListOf<LastRunData>()
-            for (act in activities.take(5)) {
+            for ((index, act) in activities.take(5).withIndex()) {
                 val p = plannedByDate[act.dateOnly]
+                val detail = if (index == 0) coros.fetchActivityDetail(act.activityId, act.sportType).getOrNull() else null
+
+                val maxHr = if (detail != null && detail.maxHr > 0) detail.maxHr else act.maxHr
+                val maxPower = detail?.maxPowerWatts ?: 0
+                val maxCad = detail?.maxCadence ?: 0
+                val strideCm = detail?.strideLengthCm ?: 0
+                val vo2Max = detail?.vo2Max ?: 51
+                val stamina = detail?.stamina7d ?: 96.0
+                val bestKm = detail?.bestKmPace ?: "--:--"
+                val aeroTe = if (detail != null && detail.aerobicTe > 0.0) detail.aerobicTe else act.aerobicTe
+                val anaeroTe = if (detail != null && detail.anaerobicTe > 0.0) detail.anaerobicTe else act.anaerobicTe
+                val elevM = if (detail != null && detail.elevGainM > 0) detail.elevGainM else act.elevGainM.toInt()
+                val kcal = if (detail != null && detail.caloriesKcal > 0) detail.caloriesKcal else act.caloriesKcal
+
                 val analysis = EvoLabAnalyzer.analyzeRun(
-                    run = act,
+                    run = act.copy(maxHr = maxHr, aerobicTe = aeroTe, anaerobicTe = anaeroTe),
                     planned = p,
                     lthr = profile.lthr,
                     nextWorkoutTitle = nwData.title,
                     nextWorkoutPace = nwData.targetPace,
                     nextWorkoutZone = nwData.targetHrZone
                 )
+
                 recentList.add(
                     LastRunData(
                         name = act.name,
@@ -297,23 +341,33 @@ object LapsRepository {
                         durationMinutes = act.durationMinutes,
                         avgPace = act.avgPace,
                         avgHr = act.avgHr,
-                        maxHr = act.maxHr,
+                        maxHr = maxHr,
                         cadence = act.cadence,
+                        maxCadence = maxCad,
                         powerWatts = act.powerWatts,
+                        maxPowerWatts = maxPower,
+                        strideLengthCm = strideCm,
                         trainingLoad = act.trainingLoad,
-                        aerobicTe = act.aerobicTe,
-                        anaerobicTe = act.anaerobicTe,
+                        aerobicTe = aeroTe,
+                        anaerobicTe = anaeroTe,
+                        vo2Max = vo2Max,
+                        stamina7d = stamina,
+                        bestKmPace = bestKm,
+                        elevGainM = elevM,
+                        caloriesKcal = kcal,
                         aiVerdictHeadline = analysis.headline,
                         aiExecutiveSummary = analysis.summary,
                         aiInsights = analysis.insights,
-                        aiTips = analysis.tips
+                        aiTips = analysis.tips,
+                        hrZones = detail?.hrZones ?: emptyList(),
+                        splits = detail?.splits ?: emptyList()
                     )
                 )
             }
 
             // 7. Detect Missed Workout
             val missedEvent = plannedList.firstOrNull {
-                it.dateString >= sdf.format(mondayDate) && it.dateString < todayStr && !it.isCompleted && !it.isSkipped && (activitiesByDate[it.dateString]?.isEmpty() ?: true)
+                it.dateString >= mondayStr && it.dateString < todayStr && !it.isCompleted && !it.isSkipped && (activitiesByDate[it.dateString]?.isEmpty() ?: true)
             }
             val missedWorkoutData = if (missedEvent != null) {
                 val geminiKey = getGeminiKey(context)
@@ -357,6 +411,8 @@ object LapsRepository {
                 )
             }
 
+            val lastRunData = recentList.firstOrNull() ?: LastRunData.empty()
+
             val payload = LapsPayload(
                 updatedLabel = SimpleDateFormat("h:mm a", Locale.US).format(Date()),
                 athlete = AthleteProfile(profile.nickname, profile.rhr, profile.maxHr, profile.lthr, profile.ltspPace, profile.weightKg),
@@ -365,14 +421,29 @@ object LapsRepository {
                     plannedKm = plannedWkKm,
                     completionPct = completionPct,
                     runsCompleted = runsDone,
-                    runsPlanned = daysMatrix.count { it.plannedKm > 0 },
+                    runsPlanned = if (calId != -1L) daysMatrix.count { it.plannedKm > 0 } else runsDone,
+                    avgPace = wkAvgPace,
+                    totalElevationM = totalElev,
                     days = daysMatrix
                 ),
-                trainingLoad = TrainingLoadData(acuteTl = acuteTl, lthr = profile.lthr, rhr = profile.rhr),
+                trainingLoad = TrainingLoadData(
+                    acuteTl = acuteTl,
+                    weeklyTl = acuteTl,
+                    targetTlMin = targetTlMin,
+                    targetTlMax = targetTlMax,
+                    loadRatioPct = loadRatio,
+                    statusBadge = tlStatus,
+                    rhr = profile.rhr,
+                    lthr = profile.lthr,
+                    recoveryHours = remainingRecoveryH,
+                    readinessScore = readinessScore,
+                    lastAerobicTe = lastRunData.aerobicTe,
+                    lastAnaerobicTe = lastRunData.anaerobicTe
+                ),
                 nextWorkout = nwData,
                 raceCountdown = rcData,
                 zoneSpectrum = ZoneSpectrumData(aerobicPct = aeroPct, thresholdPct = 100 - aeroPct),
-                lastRun = recentList.firstOrNull() ?: LastRunData(),
+                lastRun = lastRunData,
                 missedWorkout = missedWorkoutData,
                 recentRuns = recentList
             )

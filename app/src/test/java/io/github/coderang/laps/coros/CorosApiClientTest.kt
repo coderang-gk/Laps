@@ -60,4 +60,16 @@ class CorosApiClientTest {
         assertEquals("4:56 /km", profile.ltspPace)
         assertEquals(75.0, profile.weightKg, 0.01)
     }
+
+    @Test
+    fun corosActivityDetail_defaultValues_areDefensiveAndNonNull() {
+        val detail = CorosApiClient.CorosActivityDetail()
+        assertEquals(0.0, detail.aerobicTe, 0.001)
+        assertEquals(0.0, detail.anaerobicTe, 0.001)
+        assertEquals(0, detail.maxHr)
+        assertEquals(51, detail.vo2Max)
+        assertEquals(96.0, detail.stamina7d, 0.001)
+        assertTrue(detail.hrZones.isEmpty())
+        assertTrue(detail.splits.isEmpty())
+    }
 }

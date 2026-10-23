@@ -571,7 +571,7 @@ private fun TrainingHubSection(
                     modifier = Modifier.padding(start = 6.dp, top = 4.dp)
                 )
             }
-            items(runs.drop(1), key = { it.date + it.name }) { run ->
+            items(runs.drop(1), key = { it.date + it.name + it.distanceKm + it.durationMinutes }) { run ->
                 RecentRunRowCard(
                     run = run,
                     onClick = { onRunClicked(run) }
