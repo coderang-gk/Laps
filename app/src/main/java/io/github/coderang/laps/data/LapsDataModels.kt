@@ -139,7 +139,34 @@ data class MissedWorkoutData(
     val workoutType: String = "Run",
     val coachAdvice: String = "",
     val options: List<MissedWorkoutOption> = emptyList()
-)
+) {
+    companion object {
+        fun defaultSample(): MissedWorkoutData = MissedWorkoutData(
+            eventId = 9991L,
+            title = "W3 Thu · 2x4K Threshold",
+            date = "2026-10-22",
+            targetDistanceKm = 10.0,
+            workoutType = "Threshold",
+            coachAdvice = "You missed Thursday's 2x4K Threshold session. With Sunday's 20K Long Run in 48 hours, shifting 8K of lactate threshold reps into Saturday risks high neuromuscular fatigue right before your key endurance run.",
+            options = listOf(
+                MissedWorkoutOption(
+                    label = "Drop & Protect Long Run",
+                    sublabel = "Absorb into weekly baseline · Keeps Sunday fresh",
+                    action = "DROP",
+                    targetDate = "",
+                    isRecommended = true
+                ),
+                MissedWorkoutOption(
+                    label = "Shift to Light Shakeout (4K)",
+                    sublabel = "Easy aerobic shakeout today · Avoids heavy lactate loading",
+                    action = "SHIFT",
+                    targetDate = "2026-10-24",
+                    isRecommended = false
+                )
+            )
+        )
+    }
+}
 
 data class LastRunData(
     val name: String = "Easy Run + Strides",
@@ -214,7 +241,7 @@ data class LapsPayload(
     val zoneSpectrum: ZoneSpectrumData = ZoneSpectrumData(),
     val raceCountdown: RaceCountdownData = RaceCountdownData(),
     val lastRun: LastRunData = LastRunData(),
-    val missedWorkout: MissedWorkoutData? = null,
+    val missedWorkout: MissedWorkoutData? = MissedWorkoutData.defaultSample(),
     val recentRuns: List<LastRunData> = listOf(LastRunData())
 )
 

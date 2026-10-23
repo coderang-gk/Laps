@@ -99,6 +99,14 @@ object LapsRepository {
 
     fun getCachedPayload(): LapsPayload = cachedPayload
 
+    fun setCachedPayload(payload: LapsPayload) {
+        cachedPayload = payload
+    }
+
+    fun resetSamplePayload() {
+        cachedPayload = LapsPayload()
+    }
+
     fun syncOnDevice(context: Context): Result<LapsPayload> {
         val (email, password) = getCorosCredentials(context)
         if (email.isBlank() || password.isBlank()) {

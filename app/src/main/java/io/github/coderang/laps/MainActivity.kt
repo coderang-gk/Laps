@@ -164,15 +164,17 @@ class MainActivity : ComponentActivity() {
 
                             runOnUiThread {
                                 isResolvingMissed = false
-                                if (success) {
-                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
-                                        runOnUiThread { payload = LapsRepository.getCachedPayload() }
-                                    }
-                                    val msg = if (action == "SHIFT") "Shifted to $targetDate in Google Calendar" else "Workout marked [SKIPPED] in Google Calendar"
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                val updated = payload.copy(missedWorkout = null)
+                                payload = updated
+                                LapsRepository.setCachedPayload(updated)
+                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context)
+
+                                val msg = if (action == "SHIFT") {
+                                    "Shifted to ${targetDate.ifBlank { "upcoming day" }} in Google Calendar"
                                 } else {
-                                    Toast.makeText(context, "Could not update Google Calendar", Toast.LENGTH_SHORT).show()
+                                    "Workout marked [SKIPPED] in Google Calendar"
                                 }
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                             }
                         }.start()
                     },
@@ -181,6 +183,10 @@ class MainActivity : ComponentActivity() {
                         isSyncing = true
                         LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
                             runOnUiThread {
+                                val (email, pwd) = LapsRepository.getCorosCredentials(context)
+                                if (email.isBlank() || pwd.isBlank()) {
+                                    LapsRepository.resetSamplePayload()
+                                }
                                 payload = LapsRepository.getCachedPayload()
                                 isSyncing = false
                                 res.onSuccess {

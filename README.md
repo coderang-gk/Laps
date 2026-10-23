@@ -36,25 +36,25 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
   &nbsp;
   <img src="assets/screenshot_coaching.jpg" width="31%" alt="Post-Run AI Coaching" />
   &nbsp;
-  <img src="assets/screenshot_plan_generator.jpg" width="31%" alt="Plan Generator" />
+  <img src="assets/screenshot_missed_resolution.jpg" width="31%" alt="Adaptive Skip & Shift Resolution" />
 </div>
 
 <p align="center">
-  <em>Training Hub Dashboard &bull; Post-Run AI Coaching &bull; 80/20 Plan Generator</em>
+  <em>Training Hub Dashboard &bull; Post-Run AI Coaching &bull; Adaptive Skip & Shift Resolution</em>
 </p>
 
 <br />
 
 <div align="center">
+  <img src="assets/screenshot_plan_generator.jpg" width="31%" alt="Plan Generator" />
+  &nbsp;
   <img src="assets/screenshot_widgets_catalog.jpg" width="31%" alt="Widget Catalog" />
   &nbsp;
   <img src="assets/screenshot_widgets_sculptural.jpg" width="31%" alt="Sculptural Widgets" />
-  &nbsp;
-  <img src="assets/screenshot_settings.jpg" width="31%" alt="Zero-Server Setup" />
 </div>
 
 <p align="center">
-  <em>Material 3 Widgets &bull; Sculptural Dials &bull; Zero-Server Settings</em>
+  <em>80/20 Plan Generator &bull; Material 3 Widgets &bull; Sculptural Dials</em>
 </p>
 
 ---
@@ -78,12 +78,13 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 - Automatically calculates weekly quality splits (Threshold, Tempo, Strides) and Sunday Long Runs aligned to your EvoLab threshold pace.
 - Publishes all structured workouts directly into your chosen Google Calendar in one tap.
 
-### Dynamic Missed-Workout Resolution
-- When a planned run is missed, Laps analyzes your recent 7-day load and upcoming workouts.
-- Provides dynamic, context-aware options:
-  - **Shift**: Push the workout to tomorrow or your next open rest day.
-  - **Skip**: Safely absorb the missed load without derailing the weekly 80/20 distribution.
-- Optional **Gemini AI Coach** integration: add your personal Gemini API key for nuanced recovery rationale, or let the built-in offline EvoLab heuristic engine guide you.
+### Dynamic Missed-Workout Resolution (Adaptive AI Coaching)
+- When a scheduled training run is missed, Laps evaluates your 7-day acute training load, upcoming key sessions, and threshold pace.
+- **Adaptive Coach Decision Engine**:
+  - **Drop / Skip Flow**: Prevents dangerous training load stacking by marking the missed run `[SKIPPED]` directly in Google Calendar, maintaining the weekly 80/20 polarization without cramming.
+  - **Shift Flow**: Pushes quality workouts to upcoming rest days while intelligently rewriting calendar event titles (`W3 Tue` $\rightarrow$ `W3 Wed`) and preserving scheduled start times (e.g., 6:30 AM).
+  - **Long Run Protection Heuristics**: If the athlete's acute training load is elevated or a key Long Run is scheduled within 48 hours, the coach automatically flags a high-priority `[AI RECOMMENDED]` decision to drop intensity or convert it into a light shakeout rather than doubling up on fatigue.
+- **Dual Reasoning Engine**: Powered offline by the built-in EvoLab physiological heuristics, with optional BYO **Gemini AI Coach** integration for personalized natural language recovery commentary.
 
 ### 12 Material 3 Expressive Home Screen Widgets
 - Pure Material You dynamic theming (Android 12+ / API 31+): dynamically adopts your wallpaper's system accent colors across all app surfaces and widgets with seamless dark/light mode switching.
@@ -149,6 +150,22 @@ cd Laps
 ```
 
 The resulting APK will be located at `app/build/outputs/apk/debug/app-debug.apk`.
+
+---
+
+## Testing & Reliability
+
+Laps adopts a Canta-inspired hermetic testing architecture. All business logic, EvoLab physiological heuristics, 80/20 plan generation, and calendar operations run on pure JVM with zero device emulator requirements using an in-memory `FakeCalendarStore`:
+
+```bash
+./gradlew test
+```
+
+- **Execution Speed**: 13 unit tests execute in **<400ms** on pure JVM.
+- **Test Matrix**:
+  - `CalendarSyncManagerTest` (7 tests): Skip flow (`[SKIPPED]` title tagging), Shift flow (automatic DOW title rewrite e.g. `W3 Tue` $\rightarrow$ `W3 Wed` and scheduled time preservation), metadata regex parsing.
+  - `EvoLabAnalyzerTest` (4 tests): High-intensity exhaustion heuristics, key Long Run protection, threshold swapping, aerobic base absorption.
+  - `PlanGeneratorTest` (2 tests): 80/20 Half-Marathon (40 workouts) & Marathon progressive overload generation.
 
 ---
 
