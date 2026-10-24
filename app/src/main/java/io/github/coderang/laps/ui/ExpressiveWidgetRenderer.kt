@@ -462,7 +462,7 @@ object ExpressiveWidgetRenderer {
 
         val rc = data.raceCountdown
         val tl = data.trainingLoad
-        val hasPlan = !data.isMetricsOnly && rc.daysLeft > 0
+        val hasPlan = (data.activePlan != null || !data.isMetricsOnly) && rc.daysLeft > 0
 
         val topPaint = textPaint(p.onSurface, s * 0.060f, bold = true, align = Paint.Align.CENTER)
         val topTitle = if (hasPlan) rc.raceName.take(10).ifBlank { "RACE GOAL" } else "EVOLAB LOAD"
@@ -719,7 +719,7 @@ object ExpressiveWidgetRenderer {
 
         val rc = data.raceCountdown
         val tl = data.trainingLoad
-        val hasPlan = !data.isMetricsOnly && rc.daysLeft > 0
+        val hasPlan = (data.activePlan != null || !data.isMetricsOnly) && rc.daysLeft > 0
 
         if (hasPlan) {
             val upperText = "${rc.raceName.take(10).ifBlank { "RACE" }} · ${rc.daysLeft}d"
@@ -827,7 +827,7 @@ object ExpressiveWidgetRenderer {
         val rc = data.raceCountdown
         val tl = data.trainingLoad
         val wm = data.weeklyMileage
-        val hasPlan = !data.isMetricsOnly && rc.daysLeft > 0
+        val hasPlan = (data.activePlan != null || !data.isMetricsOnly) && rc.daysLeft > 0
 
         if (hasPlan) {
             val leftPaint = textPaint(p.primary, s * 0.60f, bold = true, align = Paint.Align.CENTER, condensed = true)
@@ -917,7 +917,7 @@ object ExpressiveWidgetRenderer {
         val wm = data.weeklyMileage
         val zs = data.zoneSpectrum
         val tl = data.trainingLoad
-        val hasPlan = !data.isMetricsOnly && rc.daysLeft > 0
+        val hasPlan = (data.activePlan != null || !data.isMetricsOnly) && rc.daysLeft > 0
 
         val row2 = if (hasPlan) ("HM Goal Pace" to rc.goalPace) else ("Avg Wk Pace" to wm.avgPace)
         val rows = listOf(

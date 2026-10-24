@@ -57,6 +57,7 @@ import io.github.coderang.laps.ui.ExpressiveWidgetRenderer
 import io.github.coderang.laps.widgets.*
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -679,11 +680,23 @@ private fun WidgetsGallerySection(
 @Composable
 private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -> Unit)? = null) {
     val wm = payload.weeklyMileage
-    val weekProgress = (wm.completionPct / 100f).coerceIn(0f, 1f)
-    val expectedProgress = (wm.expectedCompletionPct / 100f).coerceIn(0f, 1f)
-    // Only show active/scheduled training days (hide rest days)
-    val trainingDays = remember(wm.days) {
-        wm.days.filter { it.plannedKm > 0.0 || it.actualKm > 0.0 }
+    val activePlan = payload.activePlan
+    val rc = payload.raceCountdown
+    val nowMillis = System.currentTimeMillis()
+
+    // Determine plan state for current week
+    val isUpcomingPlan = activePlan != null && activePlan.startDateMillis > nowMillis
+    val isPlanActiveThisWeek = activePlan != null && !isUpcomingPlan && wm.plannedKm > 0.0
+
+    val weekProgress = if (wm.plannedKm > 0) (wm.completionPct / 100f).coerceIn(0f, 1f) else 0f
+
+    // Training days: if plan is active, include planned and actual. If pre-plan/metrics, only show actual logged runs.
+    val trainingDays = remember(wm.days, isPlanActiveThisWeek) {
+        if (isPlanActiveThisWeek) {
+            wm.days.filter { it.plannedKm > 0.0 || it.actualKm > 0.0 }
+        } else {
+            wm.days.filter { it.actualKm > 0.0 }
+        }
     }
 
     Surface(
@@ -692,19 +705,38 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
+            // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "WEEKLY MILEAGE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "WEEKLY MILEAGE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        if (isUpcomingPlan) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = "PRE-PLAN",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(2.dp))
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
@@ -715,7 +747,7 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (wm.plannedKm > 0) "/ ${String.format(Locale.US, "%.0f", wm.plannedKm)} km" else "km this week",
+                            text = if (isPlanActiveThisWeek && wm.plannedKm > 0) "/ ${String.format(Locale.US, "%.0f", wm.plannedKm)} km" else "km logged",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(bottom = 3.dp)
@@ -725,14 +757,25 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
 
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = if (wm.plannedKm > 0) "${wm.completionPct}% Done" else "${wm.runsCompleted} Runs Logged",
+                        text = if (isPlanActiveThisWeek && wm.plannedKm > 0) {
+                            "${wm.completionPct}% Done"
+                        } else {
+                            "${wm.runsCompleted} Runs Logged"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1
                     )
                     Text(
-                        text = if (wm.plannedKm > 0) "${String.format(Locale.US, "%.1f", wm.remainingKm)} km remaining" else "${wm.avgPace} · ${wm.totalElevationM}m elev",
+                        text = if (isPlanActiveThisWeek && wm.plannedKm > 0) {
+                            "${String.format(Locale.US, "%.1f", wm.remainingKm)} km remaining"
+                        } else if (isUpcomingPlan) {
+                            val startDay = SimpleDateFormat("EEE, MMM d", Locale.US).format(Date(activePlan.startDateMillis))
+                            "Plan starts $startDay"
+                        } else {
+                            "${wm.avgPace} · ${wm.totalElevationM}m elev"
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
@@ -742,12 +785,16 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Weekly Capsule Progress Bar
-            val fillFraction = if (wm.plannedKm > 0) weekProgress.coerceAtLeast(0.06f) else (wm.actualKm.toFloat() / 35f).coerceIn(0.12f, 1f)
+            // Weekly Capsule Progress Bar (or Base Volume indicator if pre-plan/metrics)
+            val fillFraction = if (isPlanActiveThisWeek && wm.plannedKm > 0) {
+                weekProgress.coerceAtLeast(0.06f)
+            } else {
+                (wm.actualKm.toFloat() / 35f).coerceIn(0.08f, 1f)
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(14.dp)
+                    .height(12.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             ) {
@@ -756,12 +803,16 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                         .fillMaxWidth(fillFraction)
                         .fillMaxHeight()
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
+                        .background(
+                            if (isPlanActiveThisWeek) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                        )
                 )
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            // Training Days Matrix
             if (trainingDays.isEmpty()) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -777,14 +828,18 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "NO RUNS SCHEDULED THIS WEEK",
+                                text = if (isUpcomingPlan) "UPCOMING TRAINING PLAN" else "NO RUNS LOGGED THIS WEEK",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Build an 80/20 Plan (1-Tap)",
+                                text = if (isUpcomingPlan) {
+                                    "${activePlan.planWeeks}-Week ${activePlan.distanceLabel} starts next week"
+                                } else {
+                                    "Build an 80/20 Plan (1-Tap)"
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -794,121 +849,179 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                             onClick = { onPlanClicked?.invoke() },
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Create Plan")
+                            Text(if (isUpcomingPlan) "View Plan" else "Create Plan")
                         }
                     }
                 }
             } else {
-                // Training Days Only (No Rest Days)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     trainingDays.forEach { day ->
-                    val isCompleted = day.actualKm > 0
-                    val dayPct = if (day.plannedKm > 0) {
-                        ((day.actualKm / day.plannedKm) * 100.0 + 0.5).toInt()
-                    } else if (isCompleted) 100 else 0
-                    val barFrac = (dayPct / 100f).coerceIn(0f, 1f)
+                        val isCompleted = day.actualKm > 0
+                        val dayPct = if (isPlanActiveThisWeek && day.plannedKm > 0) {
+                            ((day.actualKm / day.plannedKm) * 100.0 + 0.5).toInt()
+                        } else if (isCompleted) 100 else 0
+                        val barFrac = (dayPct / 100f).coerceIn(0f, 1f)
 
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (day.isToday) {
-                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        }
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
-                                    ) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (day.isToday) {
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHigh
+                            }
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
+                                        ) {
+                                            Text(
+                                                text = day.dayName.uppercase(Locale.US),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (isCompleted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = day.dayName.uppercase(Locale.US),
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (isCompleted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontWeight = FontWeight.Bold
+                                            text = day.workoutType,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
+
                                     Text(
-                                        text = day.workoutType,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        text = if (isCompleted) {
+                                            if (isPlanActiveThisWeek && day.plannedKm > 0) {
+                                                "${String.format(Locale.US, "%.1f", day.actualKm)} / ${String.format(Locale.US, "%.0f", day.plannedKm)}K · $dayPct%"
+                                            } else {
+                                                "${String.format(Locale.US, "%.1f", day.actualKm)} km"
+                                            }
+                                        } else {
+                                            "Upcoming · ${String.format(Locale.US, "%.0f", day.plannedKm)}K"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
 
-                                Text(
-                                    text = if (isCompleted) {
-                                        if (day.plannedKm > 0) {
-                                            "${String.format(Locale.US, "%.1f", day.actualKm)} / ${String.format(Locale.US, "%.0f", day.plannedKm)}K · $dayPct%"
-                                        } else {
-                                            "${String.format(Locale.US, "%.1f", day.actualKm)} km"
-                                        }
-                                    } else {
-                                        "Upcoming · ${String.format(Locale.US, "%.0f", day.plannedKm)}K"
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(7.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                            ) {
-                                if (isCompleted) {
+                                if (isPlanActiveThisWeek) {
+                                    Spacer(modifier = Modifier.height(6.dp))
                                     Box(
                                         modifier = Modifier
-                                            .fillMaxWidth(barFrac.coerceAtLeast(0.05f))
-                                            .fillMaxHeight()
+                                            .fillMaxWidth()
+                                            .height(6.dp)
                                             .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary)
-                                    )
+                                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                    ) {
+                                        if (isCompleted) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth(barFrac.coerceAtLeast(0.05f))
+                                                    .fillMaxHeight()
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.primary)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            // SINGLE FOOTER / BANNER AT THE BOTTOM (rendered exactly once, outside trainingDays loop)
+            Spacer(modifier = Modifier.height(14.dp))
+            if (isUpcomingPlan) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPlanClicked?.invoke() }
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        val planTitle = payload.activePlan?.let { "${it.planWeeks}-Week ${it.distanceLabel}" } ?: "Active Training Plan"
-                        Text(
-                            text = planTitle,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "🚀 ${activePlan.planWeeks}-WEEK ${activePlan.distanceLabel.uppercase()} PLAN",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            val startFmt = SimpleDateFormat("EEE, MMM d", Locale.US).format(Date(activePlan.startDateMillis))
+                            val daysUntil = ((activePlan.startDateMillis - nowMillis) / 86400000L + 1).toInt().coerceAtLeast(1)
+                            Text(
+                                text = "Kicks off $startFmt · Week 1 in $daysUntil days",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Text(
                             text = "Switch Plan",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable { onPlanClicked?.invoke() }
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
+                }
+            } else if (isPlanActiveThisWeek) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Week ${rc.currentWeek} of ${activePlan.planWeeks} · ${activePlan.distanceLabel}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Switch Plan",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { onPlanClicked?.invoke() }
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Free Running Mode · COROS Sync",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "+ Create 80/20 Plan",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { onPlanClicked?.invoke() }
+                    )
                 }
             }
         }
     }
-}
 }
 
 @Composable
@@ -1505,8 +1618,13 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer
                 ) {
+                    val isUpcomingPlan = payload.activePlan != null && payload.activePlan.startDateMillis > System.currentTimeMillis()
                     val statusText = if (rc.daysLeft > 0) {
-                        "${rc.raceName.take(12)} · ${rc.daysLeft}d"
+                        if (isUpcomingPlan || rc.currentWeek == 0) {
+                            "${rc.raceName.take(12)} · Starts Mon"
+                        } else {
+                            "${rc.raceName.take(12)} · ${rc.daysLeft}d"
+                        }
                     } else {
                         "COROS · ${tl.statusBadge}"
                     }
@@ -1527,14 +1645,15 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val wkSub = if (wm.plannedKm > 0) {
+                val isUpcomingPlan = payload.activePlan != null && payload.activePlan.startDateMillis > System.currentTimeMillis()
+                val wkSub = if (!isUpcomingPlan && wm.plannedKm > 0) {
                     "/ ${wm.plannedKm.toInt()}K (${wm.completionPct}%)"
                 } else {
                     "${wm.runsCompleted} runs"
                 }
                 MetricPod(
                     modifier = Modifier.weight(1f),
-                    label = if (wm.plannedKm > 0) "Week ${rc.currentWeek}" else "Weekly Dist",
+                    label = if (!isUpcomingPlan && rc.currentWeek > 0 && wm.plannedKm > 0) "Week ${rc.currentWeek}" else "Weekly Dist",
                     value = String.format(Locale.US, "%.1fK", wm.actualKm),
                     sub = wkSub,
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
