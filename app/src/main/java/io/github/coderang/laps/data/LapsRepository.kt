@@ -196,6 +196,7 @@ object LapsRepository {
                 )
             } else emptyList()
 
+            val isMetricsOnly = calId == -1L || plannedList.isEmpty()
             val plannedByDate = plannedList.associateBy { it.dateString }
             val activitiesByDate = activities.groupBy { it.dateOnly }
 
@@ -213,7 +214,7 @@ object LapsRepository {
                 val dayActs = activitiesByDate[dStr] ?: emptyList()
                 val dayActualKm = dayActs.sumOf { it.distanceKm }
                 val planned = plannedByDate[dStr]
-                val dayPlannedKm = planned?.targetDistanceKm ?: (if (dayActualKm > 0) dayActualKm else 0.0)
+                val dayPlannedKm = if (!isMetricsOnly) (planned?.targetDistanceKm ?: 0.0) else 0.0
 
                 actualWkKm += dayActualKm
                 plannedWkKm += dayPlannedKm
@@ -222,9 +223,9 @@ object LapsRepository {
                 val isToday = dStr == todayStr
                 val status = when {
                     dayActualKm > 0 -> "COMPLETED"
-                    isToday && dayPlannedKm > 0 -> "TODAY"
-                    dStr > todayStr && dayPlannedKm > 0 -> "PLANNED"
-                    dStr < todayStr && dayPlannedKm > 0 -> "MISSED"
+                    isToday && dayPlannedKm > 0 && !isMetricsOnly -> "TODAY"
+                    !isMetricsOnly && dStr > todayStr && dayPlannedKm > 0 -> "PLANNED"
+                    !isMetricsOnly && dStr < todayStr && dayPlannedKm > 0 -> "MISSED"
                     else -> "REST"
                 }
 
@@ -238,18 +239,18 @@ object LapsRepository {
                         actualKm = ((dayActualKm * 100).toInt()) / 100.0,
                         plannedKm = ((dayPlannedKm * 100).toInt()) / 100.0,
                         status = status,
-                        workoutType = planned?.workoutType ?: if (dayActualKm > 0) "Run" else "Rest"
+                        workoutType = if (!isMetricsOnly) (planned?.workoutType ?: if (dayActualKm > 0) "Run" else "Rest") else if (dayActualKm > 0) "Run" else "Rest"
                     )
                 )
                 iterCal.add(Calendar.DAY_OF_YEAR, 1)
             }
 
             actualWkKm = ((actualWkKm * 100).toInt()) / 100.0
-            plannedWkKm = if (calId != -1L) ((plannedWkKm * 100).toInt()) / 100.0 else actualWkKm
+            plannedWkKm = if (!isMetricsOnly) ((plannedWkKm * 100).toInt()) / 100.0 else 0.0
             val completionPct = if (plannedWkKm > 0) ((actualWkKm / plannedWkKm) * 100.0 + 0.5).toInt() else 0
 
             // 4. Upcoming Workout (only populate if planned in calendar; otherwise clean metrics-only state)
-            val upcoming = plannedList.firstOrNull { it.dateString >= todayStr && !it.isCompleted && !it.isSkipped }
+            val upcoming = if (!isMetricsOnly) plannedList.firstOrNull { it.dateString >= todayStr && !it.isCompleted && !it.isSkipped } else null
             val nwData = if (upcoming != null) {
                 NextWorkoutData(
                     title = upcoming.title,
@@ -365,10 +366,12 @@ object LapsRepository {
                 )
             }
 
-            // 7. Detect Missed Workout
-            val missedEvent = plannedList.firstOrNull {
-                it.dateString >= mondayStr && it.dateString < todayStr && !it.isCompleted && !it.isSkipped && (activitiesByDate[it.dateString]?.isEmpty() ?: true)
-            }
+            // 7. Detect Missed Workout (only if user has a structured training plan)
+            val missedEvent = if (!isMetricsOnly) {
+                plannedList.firstOrNull {
+                    it.dateString >= mondayStr && it.dateString < todayStr && !it.isCompleted && !it.isSkipped && (activitiesByDate[it.dateString]?.isEmpty() ?: true)
+                }
+            } else null
             val missedWorkoutData = if (missedEvent != null) {
                 val geminiKey = getGeminiKey(context)
                 val reasoning = if (geminiKey.isNotBlank()) {
@@ -399,7 +402,7 @@ object LapsRepository {
                 )
             } else null
 
-            val rcData = if (calId != -1L && plannedList.isNotEmpty()) {
+            val rcData = if (!isMetricsOnly && calId != -1L && plannedList.isNotEmpty()) {
                 RaceCountdownData()
             } else {
                 RaceCountdownData(
@@ -421,7 +424,7 @@ object LapsRepository {
                     plannedKm = plannedWkKm,
                     completionPct = completionPct,
                     runsCompleted = runsDone,
-                    runsPlanned = if (calId != -1L) daysMatrix.count { it.plannedKm > 0 } else runsDone,
+                    runsPlanned = if (!isMetricsOnly) daysMatrix.count { it.plannedKm > 0 } else runsDone,
                     avgPace = wkAvgPace,
                     totalElevationM = totalElev,
                     days = daysMatrix
@@ -445,7 +448,8 @@ object LapsRepository {
                 zoneSpectrum = ZoneSpectrumData(aerobicPct = aeroPct, thresholdPct = 100 - aeroPct),
                 lastRun = lastRunData,
                 missedWorkout = missedWorkoutData,
-                recentRuns = recentList
+                recentRuns = recentList,
+                isMetricsOnly = isMetricsOnly
             )
 
             cachedPayload = payload

@@ -278,7 +278,8 @@ data class LapsPayload(
     val raceCountdown: RaceCountdownData = RaceCountdownData(),
     val lastRun: LastRunData = LastRunData(),
     val missedWorkout: MissedWorkoutData? = MissedWorkoutData.defaultSample(),
-    val recentRuns: List<LastRunData> = listOf(LastRunData())
+    val recentRuns: List<LastRunData> = listOf(LastRunData()),
+    val isMetricsOnly: Boolean = false
 )
 
 enum class ExpressiveTileType(

@@ -176,36 +176,70 @@ object ExpressiveWidgetRenderer {
 
         data class BarSpec(val label: String, val valueText: String, val ratio: Float, val fillCol: Int, val textCol: Int)
 
-        val rows = listOf(
-            BarSpec(
-                "Mileage",
-                String.format(Locale.US, "%.1fK", wm.actualKm),
-                (wm.completionPct / 100f).coerceIn(0.32f, 0.92f),
-                p.primary,
-                p.onPrimary
-            ),
-            BarSpec(
-                "Load TL",
-                "${tl.acuteTl}",
-                (tl.loadRatioPct / 100f).coerceIn(0.32f, 0.90f),
-                p.tertiaryContainer,
-                p.onTertiaryContainer
-            ),
-            BarSpec(
-                "Z2 Aero",
-                "${zs.aerobicPct}%",
-                (zs.aerobicPct / 100f).coerceIn(0.35f, 0.92f),
-                p.primary,
-                p.onPrimary
-            ),
-            BarSpec(
-                "Pune HM",
-                "${rc.daysLeft}d",
-                ((100 - rc.daysLeft).coerceIn(30, 88)) / 100f,
-                p.tertiaryContainer,
-                p.onTertiaryContainer
+        val hasPlan = !data.isMetricsOnly && data.weeklyMileage.plannedKm > 0.0 && rc.daysLeft > 0
+        val rows = if (hasPlan) {
+            listOf(
+                BarSpec(
+                    "Mileage",
+                    String.format(Locale.US, "%.1fK", wm.actualKm),
+                    (wm.completionPct / 100f).coerceIn(0.32f, 0.92f),
+                    p.primary,
+                    p.onPrimary
+                ),
+                BarSpec(
+                    "Load TL",
+                    "${tl.acuteTl}",
+                    (tl.loadRatioPct / 100f).coerceIn(0.32f, 0.90f),
+                    p.tertiaryContainer,
+                    p.onTertiaryContainer
+                ),
+                BarSpec(
+                    "Z2 Aero",
+                    "${zs.aerobicPct}%",
+                    (zs.aerobicPct / 100f).coerceIn(0.35f, 0.92f),
+                    p.primary,
+                    p.onPrimary
+                ),
+                BarSpec(
+                    rc.raceName.take(8).ifBlank { "Race" },
+                    "${rc.daysLeft}d",
+                    ((100 - rc.daysLeft).coerceIn(30, 88)) / 100f,
+                    p.tertiaryContainer,
+                    p.onTertiaryContainer
+                )
             )
-        )
+        } else {
+            listOf(
+                BarSpec(
+                    "Mileage",
+                    String.format(Locale.US, "%.1fK", wm.actualKm),
+                    (wm.actualKm / 35f).toFloat().coerceIn(0.35f, 0.92f),
+                    p.primary,
+                    p.onPrimary
+                ),
+                BarSpec(
+                    "Load TL",
+                    "${tl.acuteTl}",
+                    (tl.loadRatioPct / 100f).coerceIn(0.32f, 0.90f),
+                    p.tertiaryContainer,
+                    p.onTertiaryContainer
+                ),
+                BarSpec(
+                    "Z2 Aero",
+                    "${zs.aerobicPct}%",
+                    (zs.aerobicPct / 100f).coerceIn(0.35f, 0.92f),
+                    p.primary,
+                    p.onPrimary
+                ),
+                BarSpec(
+                    "Recovery",
+                    "${tl.recoveryHours}h",
+                    (tl.readinessScore / 100f).coerceIn(0.35f, 0.92f),
+                    p.tertiaryContainer,
+                    p.onTertiaryContainer
+                )
+            )
+        }
 
         val innerPad = s * 0.085f
         val gap = s * 0.032f
@@ -289,9 +323,12 @@ object ExpressiveWidgetRenderer {
 
         val nw = data.nextWorkout
         val wm = data.weeklyMileage
+        val tl = data.trainingLoad
+        val hasPlan = !data.isMetricsOnly && wm.plannedKm > 0.0
 
         val topPaint = textPaint(p.onSurfaceVariant, s * 0.048f, bold = true, align = Paint.Align.CENTER)
-        canvas.drawText("Week ${data.raceCountdown.currentWeek} : ${wm.completionPct}%", cx, cy - r * 0.62f, topPaint)
+        val topText = if (hasPlan) "Week ${data.raceCountdown.currentWeek} : ${wm.completionPct}%" else "THIS WEEK · ${wm.runsCompleted} RUNS"
+        canvas.drawText(topText, cx, cy - r * 0.62f, topPaint)
         drawLightningBolt(canvas, cx, cy - r * 0.45f, s * 0.0020f, p.primary)
 
         // Left Pod: Full Circle (tertiaryContainer)
@@ -311,22 +348,23 @@ object ExpressiveWidgetRenderer {
         val rightRect = RectF(rightPodLeft, podCy - podSize / 2f, rightPodLeft + podSize, podCy + podSize / 2f)
         canvas.drawRoundRect(rightRect, s * 0.095f, s * 0.095f, fillPaint(p.primaryContainer))
         val rightValPaint = textPaint(p.onPrimaryContainer, s * 0.13f, bold = true, align = Paint.Align.CENTER)
+        val rightText = if (hasPlan) String.format(Locale.US, "%.0fK", wm.plannedKm) else "${tl.acuteTl} TL"
         canvas.drawText(
-            if (wm.plannedKm > 0) String.format(Locale.US, "%.0fK", wm.plannedKm) else "${wm.runsCompleted}R",
+            rightText,
             rightRect.centerX(),
             numY,
             rightValPaint
         )
 
-        // Bottom Stadium Pill ("Sun 20K" or "Live Metrics")
-        val pillW = s * 0.33f
+        // Bottom Stadium Pill ("Sun 20K" or "Productive")
+        val pillW = s * 0.35f
         val pillH = s * 0.10f
         val pillTop = cy + r * 0.50f
         val pillRect = RectF(cx - pillW / 2f, pillTop, cx + pillW / 2f, pillTop + pillH)
         canvas.drawRoundRect(pillRect, pillH / 2f, pillH / 2f, fillPaint(p.surfaceContainerHighest))
 
         val pillTextPaint = textPaint(p.onSurface, s * 0.045f, bold = true, align = Paint.Align.CENTER)
-        val pillLabel = if (nw.targetDistanceKm > 0) "Sun ${nw.targetDistanceKm.toInt()}K" else "Live Metrics"
+        val pillLabel = if (hasPlan && nw.targetDistanceKm > 0) "Sun ${nw.targetDistanceKm.toInt()}K" else tl.statusBadge
         canvas.drawText(
             pillLabel,
             cx,
@@ -423,20 +461,26 @@ object ExpressiveWidgetRenderer {
         canvas.drawPath(cookie16, fillPaint(p.surfaceContainerHigh))
 
         val rc = data.raceCountdown
+        val tl = data.trainingLoad
+        val hasPlan = !data.isMetricsOnly && rc.daysLeft > 0
+
         val topPaint = textPaint(p.onSurface, s * 0.060f, bold = true, align = Paint.Align.CENTER)
-        canvas.drawText("PUNE HM", cx, cy - outerR * 0.38f, topPaint)
+        val topTitle = if (hasPlan) rc.raceName.take(10).ifBlank { "RACE GOAL" } else "EVOLAB LOAD"
+        canvas.drawText(topTitle, cx, cy - outerR * 0.38f, topPaint)
 
         val midPaint = textPaint(p.primary, s * 0.22f, bold = true, align = Paint.Align.CENTER)
-        canvas.drawText("${rc.daysLeft}d", cx, cy + s * 0.075f, midPaint)
+        val midText = if (hasPlan) "${rc.daysLeft}d" else "${tl.acuteTl}"
+        canvas.drawText(midText, cx, cy + s * 0.075f, midPaint)
 
-        val pillW = s * 0.34f
+        val pillW = s * 0.38f
         val pillH = s * 0.105f
         val pillTop = cy + outerR * 0.36f
         val pillRect = RectF(cx - pillW / 2f, pillTop, cx + pillW / 2f, pillTop + pillH)
         canvas.drawRoundRect(pillRect, pillH / 2f, pillH / 2f, fillPaint(p.tertiaryContainer))
 
-        val botPaint = textPaint(p.onTertiaryContainer, s * 0.048f, bold = true, align = Paint.Align.CENTER)
-        canvas.drawText(rc.currentLtsp, cx, pillRect.centerY() + s * 0.017f, botPaint)
+        val botPaint = textPaint(p.onTertiaryContainer, s * 0.046f, bold = true, align = Paint.Align.CENTER)
+        val botText = if (hasPlan) rc.currentLtsp else "${tl.statusBadge} · ${tl.recoveryHours}h"
+        canvas.drawText(botText, cx, pillRect.centerY() + s * 0.017f, botPaint)
     }
 
     // =========================================================================
@@ -473,10 +517,18 @@ object ExpressiveWidgetRenderer {
         canvas.drawRoundRect(iconRect, s * 0.009f, s * 0.009f, fillPaint(p.onTertiaryContainer))
 
         val wm = data.weeklyMileage
+        val tl = data.trainingLoad
+        val hasPlan = !data.isMetricsOnly && wm.plannedKm > 0.0
+
         val subPaint = textPaint(p.onSurface, s * 0.050f, bold = true)
         canvas.drawText("COROS Pace Pro", pad + s * 0.08f, horizonY + s * 0.18f, subPaint)
+        val line2 = if (hasPlan) {
+            "Week ${data.raceCountdown.currentWeek} · ${wm.runsCompleted}/${wm.runsPlanned} Runs"
+        } else {
+            "${wm.runsCompleted} Runs · ${tl.statusBadge} (${tl.acuteTl} TL)"
+        }
         canvas.drawText(
-            "Week ${data.raceCountdown.currentWeek} · ${wm.runsCompleted}/${wm.runsPlanned} Runs",
+            line2,
             pad + s * 0.08f,
             horizonY + s * 0.26f,
             textPaint(p.onSurfaceVariant, s * 0.046f, bold = true)
@@ -500,8 +552,12 @@ object ExpressiveWidgetRenderer {
         val corner = s * 0.19f
         canvas.drawRoundRect(outer, corner, corner, fillPaint(p.surfaceContainerHigh))
 
+        val wm = data.weeklyMileage
+        val tl = data.trainingLoad
+        val hasPlan = !data.isMetricsOnly && wm.plannedKm > 0.0
+
         val headerPaint = textPaint(p.primary, s * 0.058f, bold = true)
-        val headerText = if (data.weeklyMileage.plannedKm > 0) "Week ${data.raceCountdown.currentWeek} Plan" else "Weekly Activity"
+        val headerText = if (hasPlan) "Week ${data.raceCountdown.currentWeek} Plan" else "Recent Workouts"
         canvas.drawText(headerText, pad + s * 0.075f, pad + s * 0.15f, headerPaint)
 
         val badgeCx = s - pad - s * 0.135f
@@ -524,14 +580,14 @@ object ExpressiveWidgetRenderer {
         val items = if (acts.isNotEmpty()) {
             listOf(
                 "✓ ${acts[0].name.take(16)} · ${String.format(Locale.US, "%.1f", acts[0].distanceKm)}k",
-                if (acts.size > 1) "✓ ${acts[1].name.take(16)} · ${String.format(Locale.US, "%.1f", acts[1].distanceKm)}k" else "${String.format(Locale.US, "%.1f", data.weeklyMileage.actualKm)} km logged this week",
-                if (data.nextWorkout.targetDistanceKm > 0) "Next: ${data.nextWorkout.title.take(18)}" else "Load: ${data.trainingLoad.statusBadge} · ${data.trainingLoad.acuteTl} TL"
+                if (acts.size > 1) "✓ ${acts[1].name.take(16)} · ${String.format(Locale.US, "%.1f", acts[1].distanceKm)}k" else "${String.format(Locale.US, "%.1f", wm.actualKm)} km logged this week",
+                if (hasPlan && data.nextWorkout.targetDistanceKm > 0) "Next: ${data.nextWorkout.title.take(18)}" else "Load: ${tl.acuteTl} TL · ${tl.statusBadge}"
             )
         } else {
             listOf(
-                "✓ Tue Threshold · 8.5 km",
-                "✓ Wed + Fri Easy · 13.8 km",
-                if (data.nextWorkout.targetDistanceKm > 0) "Next: ${data.nextWorkout.title}" else "Load: ${data.trainingLoad.statusBadge}"
+                "✓ Run Logged · ${String.format(Locale.US, "%.1f", wm.actualKm)} km",
+                "${wm.runsCompleted} workouts completed",
+                if (hasPlan && data.nextWorkout.targetDistanceKm > 0) "Next: ${data.nextWorkout.title}" else "Load: ${tl.statusBadge} · ${tl.acuteTl} TL"
             )
         }
 
@@ -581,9 +637,11 @@ object ExpressiveWidgetRenderer {
         // Top-Right Dome Center: (0.61 * s, 0.39 * s)
         val trX = s * 0.605f
         val trY = s * 0.375f
+        val hasPlan = !data.isMetricsOnly && wm.plannedKm > 0.0
 
+        val topLabel = if (hasPlan) "WEEK ${data.raceCountdown.currentWeek}" else "THIS WEEK"
         canvas.drawText(
-            "WEEK ${data.raceCountdown.currentWeek}",
+            topLabel,
             trX,
             trY - s * 0.145f,
             textPaint(p.onSurfaceVariant, s * 0.042f, bold = true, align = Paint.Align.CENTER)
@@ -597,8 +655,9 @@ object ExpressiveWidgetRenderer {
             textPaint(p.onSurface, s * 0.185f, bold = true, align = Paint.Align.CENTER)
         )
 
+        val subDistLabel = if (hasPlan) "/ ${wm.plannedKm.toInt()} KM" else "KM LOGGED"
         canvas.drawText(
-            if (wm.plannedKm > 0) "/ ${wm.plannedKm.toInt()} KM" else "THIS WEEK",
+            subDistLabel,
             trX,
             trY + s * 0.115f,
             textPaint(p.primary, s * 0.048f, bold = true, align = Paint.Align.CENTER)
@@ -613,16 +672,18 @@ object ExpressiveWidgetRenderer {
         canvas.drawCircle(blX + s * 0.105f, blY - s * 0.065f, s * 0.076f, fillPaint(p.tertiaryContainer))
         canvas.drawCircle(blX - s * 0.01f, blY - s * 0.01f, s * 0.135f, fillPaint(p.primary))
 
+        val botCenterText = if (hasPlan) "${wm.completionPct}%" else "${wm.runsCompleted}"
         canvas.drawText(
-            if (wm.plannedKm > 0) "${wm.completionPct}%" else "${wm.runsCompleted}",
+            botCenterText,
             blX - s * 0.01f,
             blY + s * 0.018f,
             textPaint(p.onPrimary, s * 0.082f, bold = true, align = Paint.Align.CENTER)
         )
 
         // Bottom-left caption inside lower dome
+        val botCaption = if (hasPlan) "${wm.runsCompleted}/${wm.runsPlanned} RUNS" else "${wm.runsCompleted} RUNS"
         canvas.drawText(
-            if (wm.plannedKm > 0) "${wm.runsCompleted}/${wm.runsPlanned} RUNS" else "${wm.runsCompleted} RUNS",
+            botCaption,
             blX + s * 0.01f,
             blY + s * 0.185f,
             textPaint(p.onSurfaceVariant, s * 0.042f, bold = true, align = Paint.Align.CENTER)
@@ -657,24 +718,49 @@ object ExpressiveWidgetRenderer {
         canvas.restoreToCount(save)
 
         val rc = data.raceCountdown
-        canvas.drawText(
-            "Pune HM · ${rc.daysLeft}d",
-            cx,
-            upperOval.centerY() + s * 0.016f,
-            textPaint(p.onSecondaryContainer, s * 0.048f, bold = true, align = Paint.Align.CENTER)
-        )
-        canvas.drawText(
-            rc.currentLtsp,
-            cx,
-            cy + s * 0.052f,
-            textPaint(p.onTertiaryContainer, s * 0.135f, bold = true, align = Paint.Align.CENTER)
-        )
-        canvas.drawText(
-            "Goal ${rc.goalTime}",
-            cx,
-            lowerOval.centerY() + s * 0.016f,
-            textPaint(p.onSecondaryContainer, s * 0.048f, bold = true, align = Paint.Align.CENTER)
-        )
+        val tl = data.trainingLoad
+        val hasPlan = !data.isMetricsOnly && rc.daysLeft > 0
+
+        if (hasPlan) {
+            val upperText = "${rc.raceName.take(10).ifBlank { "RACE" }} · ${rc.daysLeft}d"
+            canvas.drawText(
+                upperText,
+                cx,
+                upperOval.centerY() + s * 0.016f,
+                textPaint(p.onSecondaryContainer, s * 0.048f, bold = true, align = Paint.Align.CENTER)
+            )
+            canvas.drawText(
+                rc.currentLtsp,
+                cx,
+                cy + s * 0.052f,
+                textPaint(p.onTertiaryContainer, s * 0.135f, bold = true, align = Paint.Align.CENTER)
+            )
+            canvas.drawText(
+                "Goal ${rc.goalTime}",
+                cx,
+                lowerOval.centerY() + s * 0.016f,
+                textPaint(p.onSecondaryContainer, s * 0.048f, bold = true, align = Paint.Align.CENTER)
+            )
+        } else {
+            canvas.drawText(
+                "ACUTE LOAD · ${tl.statusBadge}",
+                cx,
+                upperOval.centerY() + s * 0.016f,
+                textPaint(p.onSecondaryContainer, s * 0.048f, bold = true, align = Paint.Align.CENTER)
+            )
+            canvas.drawText(
+                "${tl.acuteTl} TL",
+                cx,
+                cy + s * 0.052f,
+                textPaint(p.onTertiaryContainer, s * 0.135f, bold = true, align = Paint.Align.CENTER)
+            )
+            canvas.drawText(
+                "Readiness ${tl.readinessScore}% · Rec ${tl.recoveryHours}h",
+                cx,
+                lowerOval.centerY() + s * 0.016f,
+                textPaint(p.onSecondaryContainer, s * 0.044f, bold = true, align = Paint.Align.CENTER)
+            )
+        }
     }
 
     // =========================================================================
@@ -739,31 +825,64 @@ object ExpressiveWidgetRenderer {
         canvas.drawRoundRect(outer, corner, corner, fillPaint(p.surfaceContainerHigh))
 
         val rc = data.raceCountdown
-        val leftPaint = textPaint(p.primary, s * 0.60f, bold = true, align = Paint.Align.CENTER, condensed = true)
-        canvas.drawText(
-            String.format(Locale.US, "%02d", rc.daysLeft),
-            pad + outer.width() * 0.34f,
-            s - pad - s * 0.10f,
-            leftPaint
-        )
+        val tl = data.trainingLoad
+        val wm = data.weeklyMileage
+        val hasPlan = !data.isMetricsOnly && rc.daysLeft > 0
 
-        val trPaint = textPaint(p.tertiary, s * 0.27f, bold = true, align = Paint.Align.CENTER, condensed = true)
-        canvas.drawText(
-            "W${rc.currentWeek}",
-            pad + outer.width() * 0.78f,
-            pad + outer.height() * 0.44f,
-            trPaint
-        )
+        if (hasPlan) {
+            val leftPaint = textPaint(p.primary, s * 0.60f, bold = true, align = Paint.Align.CENTER, condensed = true)
+            canvas.drawText(
+                String.format(Locale.US, "%02d", rc.daysLeft),
+                pad + outer.width() * 0.34f,
+                s - pad - s * 0.10f,
+                leftPaint
+            )
 
-        val pillRect = RectF(
-            pad + outer.width() * 0.62f,
-            pad + outer.height() * 0.52f,
-            s - pad - s * 0.06f,
-            s - pad - s * 0.07f
-        )
-        canvas.drawRoundRect(pillRect, s * 0.07f, s * 0.07f, fillPaint(p.tertiaryContainer))
-        val pillText = textPaint(p.onTertiaryContainer, s * 0.12f, bold = true, align = Paint.Align.CENTER, condensed = true)
-        canvas.drawText("1:45", pillRect.centerX(), pillRect.centerY() + s * 0.044f, pillText)
+            val trPaint = textPaint(p.tertiary, s * 0.27f, bold = true, align = Paint.Align.CENTER, condensed = true)
+            canvas.drawText(
+                "W${rc.currentWeek}",
+                pad + outer.width() * 0.78f,
+                pad + outer.height() * 0.44f,
+                trPaint
+            )
+
+            val pillRect = RectF(
+                pad + outer.width() * 0.62f,
+                pad + outer.height() * 0.52f,
+                s - pad - s * 0.06f,
+                s - pad - s * 0.07f
+            )
+            canvas.drawRoundRect(pillRect, s * 0.07f, s * 0.07f, fillPaint(p.tertiaryContainer))
+            val pillText = textPaint(p.onTertiaryContainer, s * 0.12f, bold = true, align = Paint.Align.CENTER, condensed = true)
+            canvas.drawText(rc.goalTime.take(5).ifBlank { "1:45" }, pillRect.centerX(), pillRect.centerY() + s * 0.044f, pillText)
+        } else {
+            val leftPaint = textPaint(p.primary, s * 0.48f, bold = true, align = Paint.Align.CENTER, condensed = true)
+            val bigNum = if (tl.acuteTl > 0) "${tl.acuteTl}" else "${wm.actualKm.toInt()}K"
+            canvas.drawText(
+                bigNum,
+                pad + outer.width() * 0.36f,
+                s - pad - s * 0.14f,
+                leftPaint
+            )
+
+            val trPaint = textPaint(p.tertiary, s * 0.22f, bold = true, align = Paint.Align.CENTER, condensed = true)
+            canvas.drawText(
+                "TL",
+                pad + outer.width() * 0.78f,
+                pad + outer.height() * 0.42f,
+                trPaint
+            )
+
+            val pillRect = RectF(
+                pad + outer.width() * 0.58f,
+                pad + outer.height() * 0.50f,
+                s - pad - s * 0.04f,
+                s - pad - s * 0.08f
+            )
+            canvas.drawRoundRect(pillRect, s * 0.07f, s * 0.07f, fillPaint(p.tertiaryContainer))
+            val pillText = textPaint(p.onTertiaryContainer, s * 0.085f, bold = true, align = Paint.Align.CENTER, condensed = true)
+            canvas.drawText(tl.statusBadge.take(7), pillRect.centerX(), pillRect.centerY() + s * 0.032f, pillText)
+        }
     }
 
     // =========================================================================
@@ -794,11 +913,18 @@ object ExpressiveWidgetRenderer {
             textPaint(p.onTertiaryContainer, s * 0.070f, bold = true, align = Paint.Align.CENTER)
         )
 
+        val rc = data.raceCountdown
+        val wm = data.weeklyMileage
+        val zs = data.zoneSpectrum
+        val tl = data.trainingLoad
+        val hasPlan = !data.isMetricsOnly && rc.daysLeft > 0
+
+        val row2 = if (hasPlan) ("HM Goal Pace" to rc.goalPace) else ("Avg Wk Pace" to wm.avgPace)
         val rows = listOf(
-            "Threshold LT" to data.raceCountdown.currentLtsp,
-            "HM Goal Pace" to data.raceCountdown.goalPace,
-            "Easy Z2 HR" to "${data.zoneSpectrum.easyAvgHr} bpm",
-            "Resting HR" to "${data.trainingLoad.rhr} bpm"
+            "Threshold LT" to rc.currentLtsp,
+            row2,
+            "Easy Z2 Ceiling" to "< ${zs.z2CeilingHr} bpm",
+            "Resting HR" to "${tl.rhr} bpm"
         )
 
         var y = pad + s * 0.32f

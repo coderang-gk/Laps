@@ -75,18 +75,18 @@ class MainActivity : ComponentActivity() {
     )
 
     private val catalog = listOf(
-        WidgetCatalogItem(0, "Capsule Stack", "Mileage, Load, Z2 & Race", "2×2", "CARDS", ExpressiveTileType.WEEKLY_MILEAGE),
+        WidgetCatalogItem(0, "Capsule Stack", "Mileage, Load, Z2 & Recovery", "2×2", "CARDS", ExpressiveTileType.WEEKLY_MILEAGE),
         WidgetCatalogItem(1, "EvoLab Ring", "Concentric load & readiness", "2×2", "SCULPTURAL", ExpressiveTileType.TRAINING_LOAD),
-        WidgetCatalogItem(2, "Contrast Pods", "Circle + squircle volume pods", "2×2", "SCULPTURAL", ExpressiveTileType.NEXT_WORKOUT),
+        WidgetCatalogItem(2, "Contrast Pods", "Weekly volume + Load pods", "2×2", "SCULPTURAL", ExpressiveTileType.NEXT_WORKOUT),
         WidgetCatalogItem(3, "80/20 Split Bar", "Aerobic vs Threshold HR balance", "2×2", "CARDS", ExpressiveTileType.ZONE_SPECTRUM),
-        WidgetCatalogItem(4, "Cookie-12 Seal", "Pune HM countdown scallop", "2×2", "SCULPTURAL", ExpressiveTileType.RACE_COUNTDOWN),
+        WidgetCatalogItem(4, "Cookie-12 Seal", "EvoLab Load & Readiness seal", "2×2", "SCULPTURAL", ExpressiveTileType.RACE_COUNTDOWN),
         WidgetCatalogItem(5, "Horizon Split", "Weekly progress + Cookie-9", "2×2", "CARDS", ExpressiveTileType.COMMAND_CENTER),
-        WidgetCatalogItem(6, "Nested Plan", "Asymmetric 3-run stack", "2×2", "CARDS", ExpressiveTileType.NEXT_WORKOUT),
-        WidgetCatalogItem(7, "Slanted Pill", "Tilted capsule + satellites", "2×2", "SCULPTURAL", ExpressiveTileType.WEEKLY_MILEAGE),
-        WidgetCatalogItem(8, "Tonal Ellipses", "Layered threshold & goal ovals", "2×2", "SCULPTURAL", ExpressiveTileType.RACE_COUNTDOWN),
+        WidgetCatalogItem(6, "Nested Activity", "Recent workouts & load stack", "2×2", "CARDS", ExpressiveTileType.NEXT_WORKOUT),
+        WidgetCatalogItem(7, "Slanted Pill", "Weekly volume & runs logged", "2×2", "SCULPTURAL", ExpressiveTileType.WEEKLY_MILEAGE),
+        WidgetCatalogItem(8, "Tonal Ellipses", "Load, readiness & recovery", "2×2", "SCULPTURAL", ExpressiveTileType.RACE_COUNTDOWN),
         WidgetCatalogItem(9, "Flower Dial", "Cookie-12 readiness + week dots", "2×2", "SCULPTURAL", ExpressiveTileType.TRAINING_LOAD),
-        WidgetCatalogItem(10, "Display Split", "Tall condensed race countdown", "2×2", "CARDS", ExpressiveTileType.RACE_COUNTDOWN),
-        WidgetCatalogItem(11, "EvoLab Splits", "4-row pace & HR table", "2×2", "CARDS", ExpressiveTileType.COMMAND_CENTER)
+        WidgetCatalogItem(10, "Display Split", "Condensed Acute Load display", "2×2", "CARDS", ExpressiveTileType.RACE_COUNTDOWN),
+        WidgetCatalogItem(11, "EvoLab Splits", "Pace, HR & Lactate Threshold", "2×2", "CARDS", ExpressiveTileType.COMMAND_CENTER)
     )
 
     private var oauthRefreshTrigger by mutableIntStateOf(0)
@@ -724,7 +724,7 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                         maxLines = 1
                     )
                     Text(
-                        text = if (wm.plannedKm > 0) "${String.format(Locale.US, "%.1f", wm.remainingKm)} km remaining" else "Active training week",
+                        text = if (wm.plannedKm > 0) "${String.format(Locale.US, "%.1f", wm.remainingKm)} km remaining" else "${wm.avgPace} · ${wm.totalElevationM}m elev",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1
@@ -735,6 +735,7 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
             Spacer(modifier = Modifier.height(12.dp))
 
             // Weekly Capsule Progress Bar
+            val fillFraction = if (wm.plannedKm > 0) weekProgress.coerceAtLeast(0.06f) else (wm.actualKm.toFloat() / 35f).coerceIn(0.12f, 1f)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -744,7 +745,7 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(weekProgress.coerceAtLeast(0.06f))
+                        .fillMaxWidth(fillFraction)
                         .fillMaxHeight()
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
