@@ -1832,7 +1832,7 @@ private fun LapsOnboardingDialog(
     var isLoggingIn by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val calendars = remember { CalendarSyncManager.getAvailableCalendars(context) }
+    var calendars by remember { mutableStateOf(CalendarSyncManager.getAvailableCalendars(context)) }
     var selectedCalendarId by remember { mutableLongStateOf(-1L) }
     var calendarExpanded by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
@@ -2012,17 +2012,34 @@ private fun LapsOnboardingDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "Google Calendar (Optional)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Only needed for scheduled workouts. Choose 'None (Metrics Only)' if you just want widgets.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Google Calendar (Optional)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Only needed for scheduled workouts. Choose 'None (Metrics Only)' if you just want widgets.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            CalendarSyncManager.requestSync(context)
+                            calendars = CalendarSyncManager.getAvailableCalendars(context)
+                            Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("↻", fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 val selectedCal = calendars.find { it.id == selectedCalendarId }
@@ -2034,7 +2051,10 @@ private fun LapsOnboardingDialog(
 
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedCard(
-                        onClick = { calendarExpanded = true },
+                        onClick = {
+                            calendars = CalendarSyncManager.getAvailableCalendars(context)
+                            calendarExpanded = true
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -2056,13 +2076,27 @@ private fun LapsOnboardingDialog(
                     }
                     DropdownMenu(
                         expanded = calendarExpanded,
-                        onDismissRequest = { calendarExpanded = false }
+                        onDismissRequest = { calendarExpanded = false },
+                        modifier = Modifier
+                            .heightIn(max = 280.dp)
+                            .widthIn(max = 320.dp)
                     ) {
                         DropdownMenuItem(
                             text = {
-                                Column {
-                                    Text("None (Metrics Only — Widgets & Live Sync)", fontWeight = FontWeight.SemiBold)
-                                    Text("No training plan. Connect purely for COROS metrics widgets.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = "None (Metrics Only — Widgets & Live Sync)",
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "No training plan. Connect purely for COROS metrics widgets.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             },
                             onClick = {
@@ -2073,12 +2107,19 @@ private fun LapsOnboardingDialog(
                         calendars.forEach { cal ->
                             DropdownMenuItem(
                                 text = {
-                                    Column {
-                                        Text(cal.displayName, fontWeight = FontWeight.Medium)
+                                    Column(modifier = Modifier.fillMaxWidth()) {
                                         Text(
-                                            cal.accountName,
+                                            text = cal.displayName,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = cal.accountName,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 },
@@ -2088,6 +2129,32 @@ private fun LapsOnboardingDialog(
                                 }
                             )
                         }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        DropdownMenuItem(
+                            text = {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = "↻ Refresh Calendars from Device",
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Pulls newly created Google or local calendars",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            },
+                            onClick = {
+                                CalendarSyncManager.requestSync(context)
+                                calendars = CalendarSyncManager.getAvailableCalendars(context)
+                                Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
+                            }
+                        )
                     }
                 }
 
@@ -2198,7 +2265,7 @@ private fun LapsSettingsDialog(
     var selectedCalendarId by remember { mutableLongStateOf(savedCalId) }
     var isOAuthMode by remember { mutableStateOf(savedToken.isNotBlank() || (savedEmail.isBlank() && savedPassword.isBlank())) }
 
-    val calendars = remember { CalendarSyncManager.getAvailableCalendars(context) }
+    var calendars by remember { mutableStateOf(CalendarSyncManager.getAvailableCalendars(context)) }
     var calendarExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -2342,17 +2409,34 @@ private fun LapsSettingsDialog(
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
-                Text(
-                    text = "Google Calendar (Optional)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Only needed for scheduled workouts. Choose 'None (Metrics Only)' if you just want widgets.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Google Calendar (Optional)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Only needed for scheduled workouts. Choose 'None (Metrics Only)' if you just want widgets.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            CalendarSyncManager.requestSync(context)
+                            calendars = CalendarSyncManager.getAvailableCalendars(context)
+                            Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("↻", fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 val selectedCal = calendars.find { it.id == selectedCalendarId }
@@ -2364,7 +2448,10 @@ private fun LapsSettingsDialog(
 
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedCard(
-                        onClick = { calendarExpanded = true },
+                        onClick = {
+                            calendars = CalendarSyncManager.getAvailableCalendars(context)
+                            calendarExpanded = true
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -2393,13 +2480,27 @@ private fun LapsSettingsDialog(
                     }
                     DropdownMenu(
                         expanded = calendarExpanded,
-                        onDismissRequest = { calendarExpanded = false }
+                        onDismissRequest = { calendarExpanded = false },
+                        modifier = Modifier
+                            .heightIn(max = 280.dp)
+                            .widthIn(max = 320.dp)
                     ) {
                         DropdownMenuItem(
                             text = {
-                                Column {
-                                    Text("None (Metrics Only — Widgets & Live Sync)", fontWeight = FontWeight.SemiBold)
-                                    Text("No training plan. Connect purely for COROS metrics widgets.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = "None (Metrics Only — Widgets & Live Sync)",
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "No training plan. Connect purely for COROS metrics widgets.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             },
                             onClick = {
@@ -2410,12 +2511,19 @@ private fun LapsSettingsDialog(
                         calendars.forEach { cal ->
                             DropdownMenuItem(
                                 text = {
-                                    Column {
-                                        Text(cal.displayName, fontWeight = FontWeight.Medium)
+                                    Column(modifier = Modifier.fillMaxWidth()) {
                                         Text(
-                                            cal.accountName,
+                                            text = cal.displayName,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = cal.accountName,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 },
@@ -2425,6 +2533,32 @@ private fun LapsSettingsDialog(
                                 }
                             )
                         }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        DropdownMenuItem(
+                            text = {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = "↻ Refresh Calendars from Device",
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Pulls newly created Google or local calendars",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            },
+                            onClick = {
+                                CalendarSyncManager.requestSync(context)
+                                calendars = CalendarSyncManager.getAvailableCalendars(context)
+                                Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
+                            }
+                        )
                     }
                 }
 

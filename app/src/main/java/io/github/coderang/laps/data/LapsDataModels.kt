@@ -277,7 +277,7 @@ data class LapsPayload(
     val zoneSpectrum: ZoneSpectrumData = ZoneSpectrumData(),
     val raceCountdown: RaceCountdownData = RaceCountdownData(),
     val lastRun: LastRunData = LastRunData(),
-    val missedWorkout: MissedWorkoutData? = MissedWorkoutData.defaultSample(),
+    val missedWorkout: MissedWorkoutData? = null,
     val recentRuns: List<LastRunData> = listOf(LastRunData()),
     val isMetricsOnly: Boolean = false
 )

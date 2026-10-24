@@ -6,16 +6,21 @@ import org.junit.Test
 class LapsDataModelsTest {
 
     @Test
-    fun lapsPayload_defaultSample_hasValidMissedWorkout() {
-        val payload = LapsPayload()
-        assertNotNull("Default sample payload should contain a missed workout for demonstration", payload.missedWorkout)
-        assertEquals("W3 Thu · 2x4K Threshold", payload.missedWorkout?.title)
-        assertEquals(10.0, payload.missedWorkout?.targetDistanceKm ?: 0.0, 0.01)
-        assertEquals(2, payload.missedWorkout?.options?.size)
+    fun missedWorkoutData_defaultSample_hasValidOptions() {
+        val sample = MissedWorkoutData.defaultSample()
+        assertEquals("W3 Thu · 2x4K Threshold", sample.title)
+        assertEquals(10.0, sample.targetDistanceKm, 0.01)
+        assertEquals(2, sample.options.size)
 
-        val recommended = payload.missedWorkout?.options?.firstOrNull { it.isRecommended }
+        val recommended = sample.options.firstOrNull { it.isRecommended }
         assertNotNull("Must contain an AI recommended option", recommended)
         assertEquals("DROP", recommended?.action)
+    }
+
+    @Test
+    fun lapsPayload_defaultsToNullMissedWorkout() {
+        val payload = LapsPayload()
+        assertNull("Default payload should not show ghost missed workouts", payload.missedWorkout)
     }
 
     @Test

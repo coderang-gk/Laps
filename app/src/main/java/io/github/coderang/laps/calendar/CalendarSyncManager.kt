@@ -69,6 +69,7 @@ object CalendarSyncManager {
             val projection = arrayOf(
                 CalendarContract.Calendars._ID,
                 CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+                CalendarContract.Calendars.NAME,
                 CalendarContract.Calendars.ACCOUNT_NAME,
                 CalendarContract.Calendars.IS_PRIMARY
             )
@@ -82,16 +83,21 @@ object CalendarSyncManager {
                 )
                 cursor?.use { c ->
                     val idIdx = c.getColumnIndexOrThrow(CalendarContract.Calendars._ID)
-                    val nameIdx = c.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME)
+                    val dispNameIdx = c.getColumnIndex(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME)
+                    val nameIdx = c.getColumnIndex(CalendarContract.Calendars.NAME)
                     val accIdx = c.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_NAME)
                     val primIdx = c.getColumnIndex(CalendarContract.Calendars.IS_PRIMARY)
 
                     while (c.moveToNext()) {
                         val isPrim = if (primIdx != -1) c.getInt(primIdx) == 1 else false
+                        val dispName = if (dispNameIdx != -1) c.getString(dispNameIdx) else null
+                        val altName = if (nameIdx != -1) c.getString(nameIdx) else null
+                        val calId = c.getLong(idIdx)
+                        val finalName = dispName?.ifBlank { null } ?: altName?.ifBlank { null } ?: "Calendar #$calId"
                         calendars.add(
                             CalendarInfo(
-                                id = c.getLong(idIdx),
-                                displayName = c.getString(nameIdx) ?: "Calendar",
+                                id = calId,
+                                displayName = finalName,
                                 accountName = c.getString(accIdx) ?: "",
                                 isPrimary = isPrim
                             )
@@ -227,6 +233,25 @@ object CalendarSyncManager {
 
     fun getAvailableCalendars(context: Context? = null): List<CalendarInfo> =
         getStore(context).getAvailableCalendars()
+
+    /**
+     * Triggers an expedited sync on Android's Google Calendar SyncAdapter
+     * so newly created calendars on the user's Google account appear in the local ContentProvider.
+     */
+    fun requestSync(context: Context) {
+        try {
+            val accounts = android.accounts.AccountManager.get(context).accounts
+            for (acc in accounts) {
+                if (acc.type == "com.google" || acc.type.contains("calendar", ignoreCase = true)) {
+                    val bundle = android.os.Bundle().apply {
+                        putBoolean(android.content.ContentResolver.SYNC_EXTRAS_MANUAL, true)
+                        putBoolean(android.content.ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+                    }
+                    android.content.ContentResolver.requestSync(acc, CalendarContract.AUTHORITY, bundle)
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     fun getPlannedWorkouts(
         context: Context? = null,
