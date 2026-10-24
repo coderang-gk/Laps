@@ -884,6 +884,26 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val planTitle = payload.activePlan?.let { "${it.planWeeks}-Week ${it.distanceLabel}" } ?: "Active Training Plan"
+                        Text(
+                            text = planTitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Switch Plan",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { onPlanClicked?.invoke() }
+                        )
+                    }
                 }
             }
         }
@@ -2630,8 +2650,15 @@ private fun PlanGeneratorDialog(
     onPlanPublished: () -> Unit
 ) {
     val context = LocalContext.current
-    var selectedDistance by remember { mutableStateOf(PlanGenerator.RaceDistance.HALF_MARATHON) }
-    var planWeeks by remember { mutableIntStateOf(10) }
+    val activePlan = remember { LapsRepository.getActivePlan(context) }
+    var selectedDistance by remember {
+        mutableStateOf(
+            PlanGenerator.RaceDistance.entries.find { it.label.equals(activePlan?.distanceLabel, ignoreCase = true) }
+                ?: PlanGenerator.RaceDistance.HALF_MARATHON
+        )
+    }
+    var planWeeks by remember { mutableIntStateOf(activePlan?.planWeeks ?: 10) }
+    var clearPreviousWorkouts by remember { mutableStateOf(true) }
     var isPublishing by remember { mutableStateOf(false) }
 
     val selectedCalId = LapsRepository.getSelectedCalendarId(context)
@@ -2642,7 +2669,7 @@ private fun PlanGeneratorDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Training Plan Generator",
+                text = if (activePlan != null) "Switch / Edit Training Plan" else "Training Plan Generator",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -2653,6 +2680,64 @@ private fun PlanGeneratorDialog(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                if (activePlan != null) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "CURRENT ACTIVE PLAN",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${activePlan.planWeeks}-Week ${activePlan.distanceLabel}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                FilledTonalButton(
+                                    onClick = {
+                                        coroutineScope.launch(Dispatchers.IO) {
+                                            if (hasCalendar) {
+                                                CalendarSyncManager.clearPlanEvents(context, selectedCalId)
+                                            }
+                                            LapsRepository.clearActivePlan(context)
+                                            withContext(Dispatchers.Main) {
+                                                Toast.makeText(context, "Plan cleared (Metrics-Only mode)", Toast.LENGTH_SHORT).show()
+                                                onPlanPublished()
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Clear Plan", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Select a new distance or duration below to switch plans cleanly.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
                 if (!hasCalendar) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -2791,7 +2876,13 @@ private fun PlanGeneratorDialog(
                     }
                     isPublishing = true
                     coroutineScope.launch(Dispatchers.IO) {
+                        if (clearPreviousWorkouts) {
+                            CalendarSyncManager.clearPlanEvents(context, selectedCalId)
+                        }
                         val startCal = PlanGenerator.getUpcomingMonday()
+                        val raceSunday = (startCal.clone() as Calendar).apply {
+                            add(Calendar.DAY_OF_YEAR, (planWeeks - 1) * 7 + 6)
+                        }
                         PlanGenerator.generatePlan(
                             context = context,
                             calendarId = selectedCalId,
@@ -2799,6 +2890,16 @@ private fun PlanGeneratorDialog(
                             startDateMillis = startCal.timeInMillis,
                             planWeeks = planWeeks,
                             skipPastEvents = true
+                        )
+                        LapsRepository.saveActivePlan(
+                            context,
+                            ActivePlanInfo(
+                                distanceLabel = selectedDistance.label,
+                                planWeeks = planWeeks,
+                                startDateMillis = startCal.timeInMillis,
+                                raceDateMillis = raceSunday.timeInMillis,
+                                calendarId = selectedCalId
+                            )
                         )
                         withContext(Dispatchers.Main) {
                             isPublishing = false
@@ -2820,7 +2921,7 @@ private fun PlanGeneratorDialog(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Text(if (hasCalendar) "Publish to Calendar" else "No Calendar Selected")
+                    Text(if (hasCalendar) (if (activePlan != null) "Switch / Update Plan" else "Publish to Calendar") else "No Calendar Selected")
                 }
             }
         },

@@ -192,4 +192,76 @@ class CalendarSyncManagerTest {
         assertFalse(workouts[1].isCompleted)
         assertTrue(workouts[1].isSkipped)
     }
+
+    @Test
+    fun clearPlanEvents_removesPlanWorkouts_preservesPersonalEvents() {
+        val now = System.currentTimeMillis()
+        fakeStore.seedEvent(
+            CalendarSyncManager.CalendarEventRecord(
+                id = 401L,
+                calendarId = 1L,
+                title = "Dentist Appointment",
+                description = "Personal checkup",
+                startMillis = now,
+                endMillis = now + 3600000L
+            )
+        )
+        fakeStore.seedEvent(
+            CalendarSyncManager.CalendarEventRecord(
+                id = 402L,
+                calendarId = 1L,
+                title = "W1 Tue · Threshold 2x4K",
+                description = "Laps workout",
+                startMillis = now + 86400000L,
+                endMillis = now + 90000000L
+            )
+        )
+        fakeStore.seedEvent(
+            CalendarSyncManager.CalendarEventRecord(
+                id = 403L,
+                calendarId = 1L,
+                title = "🏁 RACE DAY: Half Marathon (21.1K)",
+                description = "Race finale",
+                startMillis = now + 50L * 86400000L,
+                endMillis = now + 50L * 86400000L + 7200000L
+            )
+        )
+
+        val removedCount = CalendarSyncManager.clearPlanEvents(calendarId = 1L)
+        assertEquals(2, removedCount)
+
+        val remaining = fakeStore.getAllEvents()
+        assertEquals(1, remaining.size)
+        assertEquals("Dentist Appointment", remaining[0].title)
+    }
+
+    @Test
+    fun findRaceEvent_findsUpcomingRaceEvent() {
+        val now = System.currentTimeMillis()
+        fakeStore.seedEvent(
+            CalendarSyncManager.CalendarEventRecord(
+                id = 501L,
+                calendarId = 1L,
+                title = "W1 Tue · Threshold 2x4K",
+                description = "Laps workout",
+                startMillis = now + 86400000L,
+                endMillis = now + 90000000L
+            )
+        )
+        fakeStore.seedEvent(
+            CalendarSyncManager.CalendarEventRecord(
+                id = 502L,
+                calendarId = 1L,
+                title = "🏁 RACE DAY: Half Marathon (21.1K)",
+                description = "Race finale",
+                startMillis = now + 40L * 86400000L,
+                endMillis = now + 40L * 86400000L + 7200000L
+            )
+        )
+
+        val race = CalendarSyncManager.findRaceEvent(calendarId = 1L, fromMillis = now)
+        assertNotNull(race)
+        assertEquals(502L, race?.id)
+        assertTrue(race?.title?.contains("RACE DAY") == true)
+    }
 }

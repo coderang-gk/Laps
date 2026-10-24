@@ -70,4 +70,22 @@ class FakeCalendarStore : CalendarSyncManager.CalendarStore {
         )
         return id
     }
+
+    override fun clearPlanEvents(calendarId: Long): Int {
+        val toRemove = events.filter { (_, v) ->
+            v.calendarId == calendarId && (v.title.matches(Regex("^W\\d+.*·.*")) || v.title.startsWith("🏁 RACE DAY"))
+        }.keys
+        toRemove.forEach { events.remove(it) }
+        return toRemove.size
+    }
+
+    override fun findRaceEvent(calendarId: Long, fromMillis: Long): CalendarSyncManager.CalendarEventRecord? {
+        return events.values
+            .filter {
+                it.calendarId == calendarId &&
+                    it.startMillis >= fromMillis &&
+                    (it.title.contains("RACE DAY", ignoreCase = true) || it.title.contains("Race", ignoreCase = true))
+            }
+            .minByOrNull { it.startMillis }
+    }
 }

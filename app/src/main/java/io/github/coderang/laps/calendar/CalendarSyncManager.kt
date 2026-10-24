@@ -53,6 +53,8 @@ object CalendarSyncManager {
         fun queryEventById(eventId: Long): CalendarEventRecord?
         fun updateEvent(eventId: Long, title: String, startMillis: Long, endMillis: Long): Boolean
         fun insertEvent(calendarId: Long, title: String, description: String, startMillis: Long, endMillis: Long): Long?
+        fun clearPlanEvents(calendarId: Long): Int
+        fun findRaceEvent(calendarId: Long, fromMillis: Long): CalendarEventRecord?
     }
 
     // Allows unit tests to inject an in-memory FakeCalendarStore on pure JVM
@@ -229,7 +231,64 @@ object CalendarSyncManager {
                 null
             }
         }
+
+        override fun clearPlanEvents(calendarId: Long): Int {
+            return try {
+                val uri = CalendarContract.Events.CONTENT_URI
+                val where = "${CalendarContract.Events.CALENDAR_ID} = ? AND (${CalendarContract.Events.TITLE} LIKE 'W% · %' OR ${CalendarContract.Events.TITLE} LIKE '🏁 RACE DAY%')"
+                context.contentResolver.delete(uri, where, arrayOf(calendarId.toString()))
+            } catch (_: Exception) {
+                0
+            }
+        }
+
+        override fun findRaceEvent(calendarId: Long, fromMillis: Long): CalendarEventRecord? {
+            return try {
+                val uri = CalendarContract.Events.CONTENT_URI
+                val projection = arrayOf(
+                    CalendarContract.Events._ID,
+                    CalendarContract.Events.CALENDAR_ID,
+                    CalendarContract.Events.TITLE,
+                    CalendarContract.Events.DESCRIPTION,
+                    CalendarContract.Events.DTSTART,
+                    CalendarContract.Events.DTEND
+                )
+                val where = "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.DTSTART} >= ? AND (${CalendarContract.Events.TITLE} LIKE '%RACE DAY%' OR ${CalendarContract.Events.TITLE} LIKE '%Race%')"
+                val cursor = context.contentResolver.query(
+                    uri,
+                    projection,
+                    where,
+                    arrayOf(calendarId.toString(), fromMillis.toString()),
+                    "${CalendarContract.Events.DTSTART} ASC"
+                )
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        val s = it.getLong(4)
+                        val e = it.getLong(5)
+                        CalendarEventRecord(
+                            id = it.getLong(0),
+                            calendarId = it.getLong(1),
+                            title = it.getString(2) ?: "",
+                            description = it.getString(3) ?: "",
+                            startMillis = s,
+                            endMillis = if (e > s) e else s + 3600000L
+                        )
+                    } else null
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
     }
+
+    fun clearPlanEvents(context: Context? = null, calendarId: Long): Int =
+        getStore(context).clearPlanEvents(calendarId)
+
+    fun findRaceEvent(
+        context: Context? = null,
+        calendarId: Long,
+        fromMillis: Long = System.currentTimeMillis()
+    ): CalendarEventRecord? = getStore(context).findRaceEvent(calendarId, fromMillis)
 
     fun getAvailableCalendars(context: Context? = null): List<CalendarInfo> =
         getStore(context).getAvailableCalendars()

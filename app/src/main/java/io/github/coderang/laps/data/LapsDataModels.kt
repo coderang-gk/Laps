@@ -87,6 +87,14 @@ data class ZoneSpectrumData(
     val zoneCreepStatus: String = "NO ZONE CREEP"
 )
 
+data class ActivePlanInfo(
+    val distanceLabel: String = "Half Marathon",
+    val planWeeks: Int = 10,
+    val startDateMillis: Long = 0L,
+    val raceDateMillis: Long = 0L,
+    val calendarId: Long = -1L
+)
+
 data class RaceCountdownData(
     val raceName: String = "HALF MARATHON",
     val raceDate: String = "2026-12-13",
@@ -278,6 +286,7 @@ data class LapsPayload(
     val raceCountdown: RaceCountdownData = RaceCountdownData(),
     val lastRun: LastRunData = LastRunData(),
     val missedWorkout: MissedWorkoutData? = null,
+    val activePlan: ActivePlanInfo? = null,
     val recentRuns: List<LastRunData> = listOf(LastRunData()),
     val isMetricsOnly: Boolean = false
 )
