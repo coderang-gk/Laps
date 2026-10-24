@@ -2753,6 +2753,13 @@ private fun PlanGeneratorDialog(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+                val startMonday = remember { PlanGenerator.getUpcomingMonday() }
+                val raceSunday = remember(planWeeks) {
+                    (startMonday.clone() as Calendar).apply {
+                        add(Calendar.DAY_OF_YEAR, (planWeeks - 1) * 7 + 6)
+                    }
+                }
+                val sdfDate = remember { SimpleDateFormat("EEE, MMM d, yyyy", Locale.US) }
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -2760,14 +2767,14 @@ private fun PlanGeneratorDialog(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            text = "Plan Summary",
+                            text = "Plan Schedule & Summary",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "• 4 runs per week (Tue Quality, Wed Easy, Fri Easy+Strides, Sun Long Run)\n• 80% Aerobic base / 20% Threshold & Tempo\n• Peak volume aligned to ${selectedDistance.label}\n• Auto-scheduled into Google Calendar with race day finale",
+                            text = "• Starts: ${sdfDate.format(startMonday.time)} (Next Monday)\n• Race Finale: ${sdfDate.format(raceSunday.time)}\n• 4 runs/week (Tue Threshold, Wed Easy, Fri Strides, Sun Long Run)\n• Peak volume aligned to ${selectedDistance.label}\n• Zero past workouts",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2784,24 +2791,20 @@ private fun PlanGeneratorDialog(
                     }
                     isPublishing = true
                     coroutineScope.launch(Dispatchers.IO) {
-                        val cal = Calendar.getInstance().apply {
-                            add(Calendar.WEEK_OF_YEAR, planWeeks)
-                            set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
-                        }
-                        val raceDateMillis = cal.timeInMillis
-
+                        val startCal = PlanGenerator.getUpcomingMonday()
                         PlanGenerator.generatePlan(
                             context = context,
                             calendarId = selectedCalId,
                             raceDistance = selectedDistance,
-                            raceDateMillis = raceDateMillis,
-                            planWeeks = planWeeks
+                            startDateMillis = startCal.timeInMillis,
+                            planWeeks = planWeeks,
+                            skipPastEvents = true
                         )
                         withContext(Dispatchers.Main) {
                             isPublishing = false
                             Toast.makeText(
                                 context,
-                                "Published $planWeeks-week ${selectedDistance.label} plan to Google Calendar!",
+                                "Published $planWeeks-week ${selectedDistance.label} plan starting ${SimpleDateFormat("MMM d", Locale.US).format(startCal.time)}!",
                                 Toast.LENGTH_LONG
                             ).show()
                             onPlanPublished()

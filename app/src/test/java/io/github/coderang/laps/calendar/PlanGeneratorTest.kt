@@ -98,4 +98,27 @@ class PlanGeneratorTest {
         val storedEvents = fakeStore.getAllEvents()
         assertEquals(0, storedEvents.size)
     }
+
+    @Test
+    fun generatePlan_startingUpcomingMonday_createsAllFutureEvents() {
+        val upcomingMonday = PlanGenerator.getUpcomingMonday()
+        assertTrue("Upcoming Monday must be in the future", upcomingMonday.timeInMillis >= System.currentTimeMillis())
+
+        val plan = PlanGenerator.generatePlan(
+            context = null,
+            calendarId = 1L,
+            raceDistance = PlanGenerator.RaceDistance.HALF_MARATHON,
+            startDateMillis = upcomingMonday.timeInMillis,
+            planWeeks = 10,
+            skipPastEvents = true
+        )
+
+        assertEquals(40, plan.size)
+        // All events must be in the future
+        val storedEvents = fakeStore.getAllEvents()
+        assertEquals(40, storedEvents.size)
+        for (event in storedEvents) {
+            assertTrue("Event '${event.title}' must be in the future", event.startMillis >= System.currentTimeMillis())
+        }
+    }
 }

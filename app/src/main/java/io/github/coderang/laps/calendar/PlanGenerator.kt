@@ -26,24 +26,71 @@ object PlanGenerator {
         val dateMillis: Long
     )
 
+    /**
+     * Computes the upcoming Monday at 06:30 AM.
+     * If today is Monday before 06:30 AM, returns today.
+     * Otherwise returns next week's Monday so workouts always start fresh in the future.
+     */
+    fun getUpcomingMonday(baseCal: Calendar = Calendar.getInstance()): Calendar {
+        val cal = (baseCal.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 6)
+            set(Calendar.MINUTE, 30)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        val daysUntilMonday = when (dayOfWeek) {
+            Calendar.MONDAY -> if (baseCal.get(Calendar.HOUR_OF_DAY) < 6) 0 else 7
+            Calendar.TUESDAY -> 6
+            Calendar.WEDNESDAY -> 5
+            Calendar.THURSDAY -> 4
+            Calendar.FRIDAY -> 3
+            Calendar.SATURDAY -> 2
+            Calendar.SUNDAY -> 1
+            else -> 7
+        }
+        cal.add(Calendar.DAY_OF_YEAR, daysUntilMonday)
+        return cal
+    }
+
     fun generatePlan(
         context: Context? = null,
         calendarId: Long,
         raceDistance: RaceDistance,
-        raceDateMillis: Long,
+        raceDateMillis: Long? = null,
+        startDateMillis: Long? = null,
         planWeeks: Int = 10,
         runningDaysOfWeek: List<Int> = listOf(Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.FRIDAY, Calendar.SUNDAY),
         ltspPace: String = "4:56 /km",
-        lthrBpm: Int = 172
+        lthrBpm: Int = 172,
+        skipPastEvents: Boolean = false
     ): List<PlanWorkoutItem> {
         val workouts = mutableListOf<PlanWorkoutItem>()
-        val cal = Calendar.getInstance().apply {
-            timeInMillis = raceDateMillis
-            // Align to Sunday of race week
-            add(Calendar.WEEK_OF_YEAR, -planWeeks)
-            set(Calendar.HOUR_OF_DAY, 6)
-            set(Calendar.MINUTE, 30)
-            set(Calendar.SECOND, 0)
+        val startMonday = when {
+            startDateMillis != null -> {
+                Calendar.getInstance().apply {
+                    timeInMillis = startDateMillis
+                    set(Calendar.HOUR_OF_DAY, 6)
+                    set(Calendar.MINUTE, 30)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+            }
+            raceDateMillis != null -> {
+                Calendar.getInstance().apply {
+                    timeInMillis = raceDateMillis
+                    // Race day is Sunday of the final week (planWeeks)
+                    add(Calendar.WEEK_OF_YEAR, -(planWeeks - 1))
+                    while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+                        add(Calendar.DAY_OF_YEAR, -1)
+                    }
+                    set(Calendar.HOUR_OF_DAY, 6)
+                    set(Calendar.MINUTE, 30)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+            }
+            else -> getUpcomingMonday()
         }
 
         // Base peak weekly volume depending on goal
@@ -53,6 +100,8 @@ object PlanGenerator {
             RaceDistance.HALF_MARATHON -> 48.0
             RaceDistance.MARATHON -> 68.0
         }
+
+        val nowMillis = System.currentTimeMillis()
 
         for (week in 1..planWeeks) {
             val isTaper = week >= planWeeks - 1
@@ -66,10 +115,18 @@ object PlanGenerator {
             val weekTotalKm = peakKm * volumeFactor
 
             for (dayOfWeek in runningDaysOfWeek) {
-                // Find next day matching dayOfWeek in this week
-                val workoutCal = (cal.clone() as Calendar).apply {
-                    add(Calendar.WEEK_OF_YEAR, week - 1)
-                    set(Calendar.DAY_OF_WEEK, dayOfWeek)
+                val dayOffsetFromMonday = when (dayOfWeek) {
+                    Calendar.MONDAY -> 0
+                    Calendar.TUESDAY -> 1
+                    Calendar.WEDNESDAY -> 2
+                    Calendar.THURSDAY -> 3
+                    Calendar.FRIDAY -> 4
+                    Calendar.SATURDAY -> 5
+                    Calendar.SUNDAY -> 6
+                    else -> 0
+                }
+                val workoutCal = (startMonday.clone() as Calendar).apply {
+                    add(Calendar.DAY_OF_YEAR, (week - 1) * 7 + dayOffsetFromMonday)
                 }
 
                 val isSundayLongRun = dayOfWeek == Calendar.SUNDAY
@@ -112,7 +169,7 @@ object PlanGenerator {
                 }
 
                 val item = PlanWorkoutItem(
-                    dayOffset = ((workoutCal.timeInMillis - cal.timeInMillis) / 86400000L).toInt(),
+                    dayOffset = ((workoutCal.timeInMillis - startMonday.timeInMillis) / 86400000L).toInt(),
                     title = title,
                     description = desc,
                     targetDistanceKm = distKm,
@@ -122,7 +179,9 @@ object PlanGenerator {
                 workouts.add(item)
 
                 // Insert directly to Google Calendar only if a valid calendar is targeted
-                if (calendarId > 0L) {
+                // and the workout is not in the past (unless past events are permitted)
+                val isPast = workoutCal.timeInMillis < nowMillis
+                if (calendarId > 0L && (!skipPastEvents || !isPast)) {
                     CalendarSyncManager.insertWorkoutEvent(
                         context = context,
                         calendarId = calendarId,
