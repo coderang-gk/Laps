@@ -474,11 +474,13 @@ object LapsRepository {
                 )
             } else null
 
-            val raceEvent = if (hasConfiguredPlan && calId != -1L) {
-                CalendarSyncManager.findRaceEvent(context, calId, activePlan.startDateMillis - 86400000L)
+            val raceEvent = if (calId != -1L) {
+                CalendarSyncManager.findRaceEvent(
+                    context = context,
+                    calendarId = calId,
+                    fromMillis = if (hasConfiguredPlan) activePlan.startDateMillis - 86400000L else System.currentTimeMillis() - 86400000L
+                )
             } else null
-
-            val hasActiveRace = hasConfiguredPlan
 
             val rcData = if (activePlan != null && activePlan.calendarId == calId) {
                 val nowCal = Calendar.getInstance().apply {
@@ -553,6 +555,53 @@ object LapsRepository {
                     currentLtsp = profile.ltspPace.ifBlank { "4:56 /km" },
                     currentLthr = profile.lthr,
                     readinessTag = if (diffDays <= 7) "PEAK TAPER" else "ON TRACK"
+                )
+            } else if (raceEvent != null && calId != -1L) {
+                val nowCal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val raceCal = Calendar.getInstance().apply {
+                    timeInMillis = raceEvent.startMillis
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val diffDays = ((raceCal.timeInMillis - nowCal.timeInMillis) / 86400000L).toInt().coerceAtLeast(0)
+                val cleanRaceTitle = raceEvent.title
+                    .replace("🏁 RACE DAY: ", "")
+                    .replace("🏁 RACE DAY:", "")
+                    .replace("🏁 ", "")
+                    .trim()
+                    .ifBlank { "RACE DAY" }
+
+                RaceCountdownData(
+                    raceName = cleanRaceTitle.uppercase(),
+                    raceDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(raceEvent.startMillis)),
+                    daysLeft = diffDays,
+                    currentWeek = 0,
+                    totalWeeks = 0,
+                    phase = "CALENDAR RACE · $diffDays DAYS LEFT",
+                    goalTime = when {
+                        cleanRaceTitle.contains("5K", ignoreCase = true) -> "0:24:00"
+                        cleanRaceTitle.contains("10K", ignoreCase = true) -> "0:49:30"
+                        cleanRaceTitle.contains("HALF", ignoreCase = true) -> "1:45:00"
+                        cleanRaceTitle.contains("MARATHON", ignoreCase = true) -> "3:40:00"
+                        else -> "1:45:00"
+                    },
+                    goalPace = when {
+                        cleanRaceTitle.contains("5K", ignoreCase = true) -> "4:48 /km"
+                        cleanRaceTitle.contains("10K", ignoreCase = true) -> "4:57 /km"
+                        cleanRaceTitle.contains("HALF", ignoreCase = true) -> "4:58 /km"
+                        cleanRaceTitle.contains("MARATHON", ignoreCase = true) -> "5:12 /km"
+                        else -> "4:58 /km"
+                    },
+                    currentLtsp = profile.ltspPace.ifBlank { "4:56 /km" },
+                    currentLthr = profile.lthr,
+                    readinessTag = if (diffDays <= 7) "PEAK TAPER" else "OPTIMAL"
                 )
             } else {
                 RaceCountdownData(

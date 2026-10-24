@@ -2927,6 +2927,30 @@ private fun PlanGeneratorDialog(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+                val startMonday = remember { PlanGenerator.getUpcomingMonday() }
+                val raceSunday = remember(planWeeks) {
+                    (startMonday.clone() as Calendar).apply {
+                        add(Calendar.DAY_OF_YEAR, (planWeeks - 1) * 7 + 6)
+                    }
+                }
+                val daysToRace = remember(raceSunday) {
+                    val nowCal = Calendar.getInstance().apply {
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+                    val rCal = (raceSunday.clone() as Calendar).apply {
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+                    ((rCal.timeInMillis - nowCal.timeInMillis) / 86400000L).toInt().coerceAtLeast(0)
+                }
+                val sdfDate = remember { SimpleDateFormat("EEE, MMM d, yyyy", Locale.US) }
+                val sdfShort = remember { SimpleDateFormat("EEE, MMM d", Locale.US) }
+
                 Text(
                     text = "Plan Duration: $planWeeks Weeks",
                     style = MaterialTheme.typography.labelLarge,
@@ -2956,30 +2980,98 @@ private fun PlanGeneratorDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                val startMonday = remember { PlanGenerator.getUpcomingMonday() }
-                val raceSunday = remember(planWeeks) {
-                    (startMonday.clone() as Calendar).apply {
-                        add(Calendar.DAY_OF_YEAR, (planWeeks - 1) * 7 + 6)
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Prominent Target Race Day Highlight Card
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "🏁 TARGET RACE DAY",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = sdfDate.format(raceSunday.time),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary
+                        ) {
+                            Text(
+                                text = "$daysToRace days away",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
                     }
                 }
-                val sdfDate = remember { SimpleDateFormat("EEE, MMM d, yyyy", Locale.US) }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Text(
-                            text = "Plan Schedule & Summary",
+                            text = "Plan Schedule & Structure",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "• Starts: ${sdfDate.format(startMonday.time)} (Next Monday)\n• Race Finale: ${sdfDate.format(raceSunday.time)}\n• 4 runs/week (Tue Threshold, Wed Easy, Fri Strides, Sun Long Run)\n• Peak volume aligned to ${selectedDistance.label}\n• Zero past workouts",
+                            text = "• Starts: ${sdfShort.format(startMonday.time)} (Upcoming Monday)\n• 4 runs/week (Tue Threshold, Wed Easy, Fri Strides, Sun Long Run)\n• Progressive overload tailored to ${selectedDistance.label} with taper\n• Auto-calculates paces using your COROS EvoLab profile",
                             style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Reassuring Clean Calendar Option
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { clearPreviousWorkouts = !clearPreviousWorkouts }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = clearPreviousWorkouts,
+                        onCheckedChange = { clearPreviousWorkouts = it }
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column {
+                        Text(
+                            text = "Clean up previous Laps plan workouts",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Removes old plan events from calendar to avoid duplicates",
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
