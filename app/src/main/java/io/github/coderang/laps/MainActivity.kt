@@ -1159,29 +1159,38 @@ private fun RecentRunRowCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
+            .clip(RoundedCornerShape(24.dp))
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(18.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
                         text = run.dayLabel.uppercase(Locale.US),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = run.name,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${String.format(Locale.US, "%.2f", run.distanceKm)} km  ·  ${run.avgPace}  ·  ${run.avgHr} bpm",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
                     )
                 }
                 Surface(
@@ -1197,19 +1206,35 @@ private fun RecentRunRowCard(
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = run.aiVerdictHeadline,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "Tap for AI Coach verdict & tips →",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = run.aiVerdictHeadline,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Analysis →",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
 }
@@ -1241,7 +1266,7 @@ private fun RunDetailModalBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     Text(
                         text = "AI COACH RUN ANALYZER · ${run.dayLabel.uppercase(Locale.US)}",
                         style = MaterialTheme.typography.labelSmall,
@@ -1274,6 +1299,57 @@ private fun RunDetailModalBottomSheet(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Comprehensive Run Metrics 6-Pack Grid
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                RunStatChip(
+                    modifier = Modifier.weight(1f),
+                    label = "Avg Pace",
+                    value = run.avgPace,
+                    sub = if (run.bestKmPace.isNotBlank() && run.bestKmPace != "--:--") "Best ${run.bestKmPace}" else ""
+                )
+                RunStatChip(
+                    modifier = Modifier.weight(1f),
+                    label = "Heart Rate",
+                    value = "${run.avgHr} bpm",
+                    sub = if (run.maxHr > 0) "Max ${run.maxHr} bpm" else ""
+                )
+                RunStatChip(
+                    modifier = Modifier.weight(1f),
+                    label = "Cadence",
+                    value = if (run.cadence > 0) "${run.cadence} spm" else "--",
+                    sub = if (run.maxCadence > 0) "Max ${run.maxCadence}" else ""
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                RunStatChip(
+                    modifier = Modifier.weight(1f),
+                    label = "Training Load",
+                    value = if (run.trainingLoad > 0) "${run.trainingLoad}" else "--",
+                    sub = if (run.aerobicTe > 0.0) "${String.format(Locale.US, "%.1f", run.aerobicTe)} Aero TE" else ""
+                )
+                RunStatChip(
+                    modifier = Modifier.weight(1f),
+                    label = "Elevation",
+                    value = "${run.elevGainM} m",
+                    sub = if (run.caloriesKcal > 0) "${run.caloriesKcal} kcal" else ""
+                )
+                RunStatChip(
+                    modifier = Modifier.weight(1f),
+                    label = "Duration",
+                    value = "${run.durationMinutes} min",
+                    sub = if (run.strideLengthCm > 0) "${run.strideLengthCm}cm stride" else ""
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -2176,7 +2252,12 @@ private fun LapsOnboardingDialog(
                             Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
                         }
                     ) {
-                        Text("↻", fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Icon(
+                            imageVector = rememberRefreshVector(),
+                            contentDescription = "Refresh Calendars",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -2210,7 +2291,12 @@ private fun LapsOnboardingDialog(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
-                            Text("▾", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(
+                                imageVector = rememberArrowDownVector(),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                     DropdownMenu(
@@ -2271,21 +2357,32 @@ private fun LapsOnboardingDialog(
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                         DropdownMenuItem(
                             text = {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    Text(
-                                        text = "↻ Refresh Calendars from Device",
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = rememberRefreshVector(),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
                                     )
-                                    Text(
-                                        text = "Pulls newly created Google or local calendars",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Refresh Calendars from Device",
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "Pulls newly created Google or local calendars",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             },
                             onClick = {
@@ -2573,7 +2670,12 @@ private fun LapsSettingsDialog(
                             Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
                         }
                     ) {
-                        Text("↻", fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Icon(
+                            imageVector = rememberRefreshVector(),
+                            contentDescription = "Refresh Calendars",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -2614,7 +2716,12 @@ private fun LapsSettingsDialog(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            Text("▾", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(
+                                imageVector = rememberArrowDownVector(),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                     DropdownMenu(
@@ -2675,21 +2782,32 @@ private fun LapsSettingsDialog(
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                         DropdownMenuItem(
                             text = {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    Text(
-                                        text = "↻ Refresh Calendars from Device",
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = rememberRefreshVector(),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
                                     )
-                                    Text(
-                                        text = "Pulls newly created Google or local calendars",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Refresh Calendars from Device",
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "Pulls newly created Google or local calendars",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             },
                             onClick = {
@@ -3378,6 +3496,30 @@ private fun rememberShieldVector(): ImageVector = remember {
             curveTo(17.16f, 21.74f, 21.0f, 16.55f, 21.0f, 11.0f)
             verticalLineTo(5.0f)
             lineTo(12.0f, 1.0f)
+            close()
+        }
+    }.build()
+}
+
+@Composable
+private fun rememberArrowDownVector(): ImageVector = remember {
+    ImageVector.Builder(
+        name = "ArrowDown",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.White),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(7.41f, 8.59f)
+            lineTo(12.0f, 13.17f)
+            lineTo(16.59f, 8.59f)
+            lineTo(18.0f, 10.0f)
+            lineTo(12.0f, 16.0f)
+            lineTo(6.0f, 10.0f)
             close()
         }
     }.build()
