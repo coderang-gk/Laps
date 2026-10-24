@@ -239,7 +239,7 @@ object LapsRepository {
                         actualKm = ((dayActualKm * 100).toInt()) / 100.0,
                         plannedKm = ((dayPlannedKm * 100).toInt()) / 100.0,
                         status = status,
-                        workoutType = if (!isMetricsOnly) (planned?.workoutType ?: if (dayActualKm > 0) "Run" else "Rest") else if (dayActualKm > 0) "Run" else "Rest"
+                        workoutType = if (dayActs.isNotEmpty()) dayActs.first().name else (if (!isMetricsOnly) (planned?.workoutType ?: "Rest") else "Rest")
                     )
                 )
                 iterCal.add(Calendar.DAY_OF_YEAR, 1)

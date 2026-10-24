@@ -841,7 +841,11 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
 
                                 Text(
                                     text = if (isCompleted) {
-                                        "${String.format(Locale.US, "%.1f", day.actualKm)} / ${String.format(Locale.US, "%.0f", day.plannedKm)}K · $dayPct%"
+                                        if (day.plannedKm > 0) {
+                                            "${String.format(Locale.US, "%.1f", day.actualKm)} / ${String.format(Locale.US, "%.0f", day.plannedKm)}K · $dayPct%"
+                                        } else {
+                                            "${String.format(Locale.US, "%.1f", day.actualKm)} km"
+                                        }
                                     } else {
                                         "Upcoming · ${String.format(Locale.US, "%.0f", day.plannedKm)}K"
                                     },
