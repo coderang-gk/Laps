@@ -77,4 +77,25 @@ class PlanGeneratorTest {
         assertNotNull(peakLongRun)
         assertTrue("Marathon long run must peak at >= 30 km", peakLongRun!!.targetDistanceKm >= 30.0)
     }
+
+    @Test
+    fun generatePlan_negativeOrInvalidCalendarId_doesNotInsertEventsToCalendar() {
+        val raceCal = Calendar.getInstance().apply {
+            set(2026, Calendar.DECEMBER, 13, 6, 30, 0)
+        }
+        val plan = PlanGenerator.generatePlan(
+            context = null,
+            calendarId = -1L,
+            raceDistance = PlanGenerator.RaceDistance.HALF_MARATHON,
+            raceDateMillis = raceCal.timeInMillis,
+            planWeeks = 8
+        )
+
+        // Workouts are generated in memory for preview
+        assertEquals(32, plan.size)
+
+        // BUT zero events are written to calendar storage because calendarId is -1 (no calendar selected)
+        val storedEvents = fakeStore.getAllEvents()
+        assertEquals(0, storedEvents.size)
+    }
 }

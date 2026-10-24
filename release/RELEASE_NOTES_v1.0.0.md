@@ -14,7 +14,7 @@ We are excited to announce the first official release of **Laps** (`v1.0.0`), an
   * **Marathon Countdown**: Race day countdown clock with phase-specific training tips.
   * **Zone Spectrum**: Polarization ratios across Aerobic, Threshold, and VO2 Max zones.
 * **Flexible Modes**:
-  * **Metrics Only Mode (Default)**: Use Laps purely for widgets displaying your live COROS weekly mileage, acute load, and HR zones without needing a structured training plan.
+  * **Metrics Only Mode (Default)**: Use Laps purely for widgets displaying your live COROS weekly mileage, acute load, and HR zones without needing a structured training plan. Widgets dynamically adapt (no ghost denominators or phantom percentages), and calendar publishing is safely disabled until a calendar is chosen.
   * **Training Plan Mode**: Connect an on-device Google Calendar to generate 80/20 structured periodized schedules and resolve missed workouts dynamically.
 * **Hermetic Local-First Architecture**:
   * Zero analytics, zero ad networks, zero external telemetry relays.
@@ -30,7 +30,7 @@ We are excited to announce the first official release of **Laps** (`v1.0.0`), an
 
 | Asset | File | SHA-256 Checksum |
 | :--- | :--- | :--- |
-| **Release APK** | `Laps-v1.0.0.apk` | `1e00a5715dc2e9ad7ddc94b03278509c34117b8ad203f5fc70c549e140dd77e6` |
+| **Release APK** | `Laps-v1.0.0.apk` | `6e988af72d13c03f3eb2f509d458b2ea382474305a21b989e44df2eb48925ddf` |
 
 To verify the integrity on your machine before installing:
 ```bash

@@ -90,11 +90,11 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 ## Setup
 
 1. **Download & Install**: Grab the signed APK from the [Releases](https://github.com/coderang-gk/Laps/releases) page.
-   - **SHA-256 (v1.0.0)**: `1e00a5715dc2e9ad7ddc94b03278509c34117b8ad203f5fc70c549e140dd77e6`
+   - **SHA-256 (v1.0.0)**: `6e988af72d13c03f3eb2f509d458b2ea382474305a21b989e44df2eb48925ddf`
 2. **Permissions**: Grant Calendar (optional) and Notification permissions when prompted so Laps can read your training schedule and update completed runs.
 3. **Connect Account**: Open **Settings** and connect via **Direct Login** (or paste an optional MCP Bearer token).
 4. **Choose Mode**:
-   - **Metrics Only (Default)**: Keep calendar set to *"None (Metrics Only)"* to use Laps purely for glanceable home screen widgets.
+   - **Metrics Only (Default)**: Keep calendar set to *"None (Metrics Only)"* to use Laps purely for glanceable home screen widgets without phantom targets or ghost denominators. Calendar publishing is safely locked.
    - **Training Plan Mode**: Select your Google Calendar if you wish to generate 80/20 structured workout plans and track upcoming runs.
 5. **(Optional) Gemini Key**: If you wish to enable extended AI coaching commentary on missed runs, paste your Gemini API key in Settings.
 
@@ -142,13 +142,13 @@ Laps adopts a Canta-inspired hermetic testing architecture. All business logic, 
 ./gradlew test
 ```
 
-- **Execution Speed**: **22 unit tests** execute in **<500ms** on pure JVM.
+- **Execution Speed**: **24 unit tests** execute in **<500ms** on pure JVM.
 - **Test Matrix**:
-  - `CalendarSyncManagerTest` (7 tests): Skip flow (`[SKIPPED]` title tagging), Shift flow (automatic DOW title rewrite e.g. `W3 Tue` $\rightarrow$ `W3 Wed` and scheduled time preservation), metadata regex parsing.
-  - `CorosApiClientTest` (5 tests): Bearer token authentication, blank token rejection, unauthenticated error handling, defensive activity & profile model defaults.
-  - `EvoLabAnalyzerTest` (4 tests): High-intensity exhaustion heuristics, key Long Run protection, threshold swapping, aerobic base absorption.
+  - `CalendarSyncManagerTest` (6 tests): Skip flow (`[SKIPPED]` title tagging), Shift flow (automatic DOW title rewrite e.g. `W3 Tue` $\rightarrow$ `W3 Wed` and scheduled time preservation), metadata regex parsing.
+  - `CorosApiClientTest` (6 tests): Direct HTTPS authentication, Bearer token authentication, blank token rejection, unauthenticated error handling, defensive activity & profile model defaults.
+  - `EvoLabAnalyzerTest` (5 tests): High-intensity exhaustion heuristics, key Long Run protection, threshold swapping, aerobic base absorption, on-device workout analysis.
   - `LapsDataModelsTest` (4 tests): Default sample validation, weekly mileage completion ratios, EvoLab productive status, 80/20 polarization integrity.
-  - `PlanGeneratorTest` (2 tests): 80/20 Half-Marathon (40 workouts) & Marathon progressive overload generation.
+  - `PlanGeneratorTest` (3 tests): 80/20 Half-Marathon (40 workouts), Marathon progressive overload generation, and defensive calendar isolation when no calendar is targeted.
 
 ---
 

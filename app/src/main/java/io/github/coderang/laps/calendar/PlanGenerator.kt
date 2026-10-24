@@ -121,15 +121,17 @@ object PlanGenerator {
                 )
                 workouts.add(item)
 
-                // Insert directly to Google Calendar
-                CalendarSyncManager.insertWorkoutEvent(
-                    context = context,
-                    calendarId = calendarId,
-                    title = title,
-                    description = desc,
-                    startMillis = workoutCal.timeInMillis,
-                    durationMinutes = (distKm * 6.5).toInt().coerceIn(30, 180)
-                )
+                // Insert directly to Google Calendar only if a valid calendar is targeted
+                if (calendarId > 0L) {
+                    CalendarSyncManager.insertWorkoutEvent(
+                        context = context,
+                        calendarId = calendarId,
+                        title = title,
+                        description = desc,
+                        startMillis = workoutCal.timeInMillis,
+                        durationMinutes = (distKm * 6.5).toInt().coerceIn(30, 180)
+                    )
+                }
             }
         }
         return workouts

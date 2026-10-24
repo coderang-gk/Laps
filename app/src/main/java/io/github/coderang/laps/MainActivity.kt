@@ -287,6 +287,10 @@ class MainActivity : ComponentActivity() {
                 if (showPlanDialog) {
                     PlanGeneratorDialog(
                         onDismiss = { showPlanDialog = false },
+                        onOpenSettings = {
+                            showPlanDialog = false
+                            showSettingsDialog = true
+                        },
                         onPlanPublished = {
                             showPlanDialog = false
                             isSyncing = true
@@ -2483,6 +2487,7 @@ private fun LapsSettingsDialog(
 @Composable
 private fun PlanGeneratorDialog(
     onDismiss: () -> Unit,
+    onOpenSettings: () -> Unit = {},
     onPlanPublished: () -> Unit
 ) {
     val context = LocalContext.current
@@ -2491,6 +2496,7 @@ private fun PlanGeneratorDialog(
     var isPublishing by remember { mutableStateOf(false) }
 
     val selectedCalId = LapsRepository.getSelectedCalendarId(context)
+    val hasCalendar = selectedCalId > 0L
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2507,6 +2513,39 @@ private fun PlanGeneratorDialog(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                if (!hasCalendar) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "No Google Calendar Selected",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "You are currently in Metrics-Only mode. To publish workouts to your device, select a Google Calendar in Settings first.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            FilledTonalButton(
+                                onClick = onOpenSettings,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Select Calendar in Settings", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+
                 Text(
                     text = "Build a scientifically periodized 80/20 plan tailored to your COROS threshold pace & heart rate zones, published directly to your Google Calendar.",
                     style = MaterialTheme.typography.bodySmall,
@@ -2599,6 +2638,10 @@ private fun PlanGeneratorDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    if (!hasCalendar) {
+                        Toast.makeText(context, "Cannot publish: No Google Calendar selected", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
                     isPublishing = true
                     Thread {
                         val cal = Calendar.getInstance().apply {
@@ -2609,7 +2652,7 @@ private fun PlanGeneratorDialog(
 
                         PlanGenerator.generatePlan(
                             context = context,
-                            calendarId = if (selectedCalId != -1L) selectedCalId else 1L,
+                            calendarId = selectedCalId,
                             raceDistance = selectedDistance,
                             raceDateMillis = raceDateMillis,
                             planWeeks = planWeeks
@@ -2625,7 +2668,7 @@ private fun PlanGeneratorDialog(
                         }
                     }.start()
                 },
-                enabled = !isPublishing
+                enabled = !isPublishing && hasCalendar
             ) {
                 if (isPublishing) {
                     CircularProgressIndicator(
@@ -2634,7 +2677,7 @@ private fun PlanGeneratorDialog(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Text("Publish to Calendar")
+                    Text(if (hasCalendar) "Publish to Calendar" else "No Calendar Selected")
                 }
             }
         },
