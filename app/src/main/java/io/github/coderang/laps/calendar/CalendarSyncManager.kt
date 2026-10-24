@@ -239,14 +239,51 @@ object CalendarSyncManager {
      * so newly created calendars on the user's Google account appear in the local ContentProvider.
      */
     fun requestSync(context: Context) {
+        val bundle = android.os.Bundle().apply {
+            putBoolean(android.content.ContentResolver.SYNC_EXTRAS_MANUAL, true)
+            putBoolean(android.content.ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
+            putBoolean(android.content.ContentResolver.SYNC_EXTRAS_IGNORE_BACKOFF, true)
+            putBoolean(android.content.ContentResolver.SYNC_EXTRAS_IGNORE_SETTINGS, true)
+            putBoolean("force", true)
+        }
+
+        // 1. Generic authority sync request
+        try {
+            android.content.ContentResolver.requestSync(null, CalendarContract.AUTHORITY, bundle)
+        } catch (_: Exception) {}
+
+        // 2. Query distinct accounts directly from CalendarContract.Calendars (which we already have permission for)
+        try {
+            val projection = arrayOf(
+                CalendarContract.Calendars.ACCOUNT_NAME,
+                CalendarContract.Calendars.ACCOUNT_TYPE
+            )
+            context.contentResolver.query(
+                CalendarContract.Calendars.CONTENT_URI,
+                projection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val accNameIdx = cursor.getColumnIndex(CalendarContract.Calendars.ACCOUNT_NAME)
+                val accTypeIdx = cursor.getColumnIndex(CalendarContract.Calendars.ACCOUNT_TYPE)
+                val seen = mutableSetOf<String>()
+                while (cursor.moveToNext()) {
+                    val name = if (accNameIdx != -1) cursor.getString(accNameIdx) else null
+                    val type = if (accTypeIdx != -1) cursor.getString(accTypeIdx) else null
+                    if (!name.isNullOrBlank() && !type.isNullOrBlank() && seen.add("$name:$type")) {
+                        val acc = android.accounts.Account(name, type)
+                        android.content.ContentResolver.requestSync(acc, CalendarContract.AUTHORITY, bundle)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Fallback: query AccountManager if permissions permit
         try {
             val accounts = android.accounts.AccountManager.get(context).accounts
             for (acc in accounts) {
                 if (acc.type == "com.google" || acc.type.contains("calendar", ignoreCase = true)) {
-                    val bundle = android.os.Bundle().apply {
-                        putBoolean(android.content.ContentResolver.SYNC_EXTRAS_MANUAL, true)
-                        putBoolean(android.content.ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
-                    }
                     android.content.ContentResolver.requestSync(acc, CalendarContract.AUTHORITY, bundle)
                 }
             }
