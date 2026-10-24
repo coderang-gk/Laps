@@ -61,7 +61,11 @@ object LapsNotificationHelper {
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
 
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, builder.build())
+        try {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID, builder.build())
+        } catch (_: Exception) {
+            // Catches SecurityException if notification permissions are denied on Android 13+
+        }
     }
 }

@@ -149,13 +149,22 @@ object LapsRepository {
             val coros = CorosApiClient()
             val profile = if (token.isNotBlank()) {
                 val tokenResult = coros.authenticateWithToken(token)
+                if (tokenResult.isFailure) {
+                    return Result.failure(tokenResult.exceptionOrNull() ?: IllegalStateException("COROS token authentication failed"))
+                }
                 tokenResult.getOrNull() ?: CorosApiClient.CorosProfile(nickname = "COROS Athlete")
             } else {
                 val loginResult = coros.login(email, password)
+                if (loginResult.isFailure) {
+                    return Result.failure(loginResult.exceptionOrNull() ?: IllegalStateException("COROS login failed"))
+                }
                 loginResult.getOrNull() ?: CorosApiClient.CorosProfile()
             }
 
             val actResult = coros.fetchActivities(limit = 25)
+            if (actResult.isFailure) {
+                return Result.failure(actResult.exceptionOrNull() ?: IllegalStateException("Failed to fetch COROS activities"))
+            }
             val activities = actResult.getOrNull() ?: emptyList()
 
             // 1. Calculate current week (Monday..Sunday)

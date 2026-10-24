@@ -21,7 +21,7 @@ class LapsSyncWorker(
         return try {
             val result = LapsRepository.syncOnDevice(applicationContext)
             if (result.isSuccess) {
-                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(applicationContext)
+                LapsWidgetUpdateHelper.renderAllFromCache(applicationContext)
             }
             Result.success()
         } catch (_: Exception) {

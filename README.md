@@ -90,7 +90,7 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 ## Setup
 
 1. **Download & Install**: Grab the signed APK from the [Releases](https://github.com/coderang-gk/Laps/releases) page.
-   - **SHA-256 (v1.0.0)**: `6e988af72d13c03f3eb2f509d458b2ea382474305a21b989e44df2eb48925ddf`
+   - **SHA-256 (v1.0.0)**: `d0eaab7edf0e7aa9ceced63ba74f08d3318e6d76d9b162366639475fc249b826`
 2. **Permissions**: Grant Calendar (optional) and Notification permissions when prompted so Laps can read your training schedule and update completed runs.
 3. **Connect Account**: Open **Settings** and connect via **Direct Login** (or paste an optional MCP Bearer token).
 4. **Choose Mode**:
@@ -142,10 +142,10 @@ Laps adopts a Canta-inspired hermetic testing architecture. All business logic, 
 ./gradlew test
 ```
 
-- **Execution Speed**: **24 unit tests** execute in **<500ms** on pure JVM.
+- **Execution Speed**: **28 unit tests** execute in **<500ms** on pure JVM.
 - **Test Matrix**:
   - `CalendarSyncManagerTest` (6 tests): Skip flow (`[SKIPPED]` title tagging), Shift flow (automatic DOW title rewrite e.g. `W3 Tue` $\rightarrow$ `W3 Wed` and scheduled time preservation), metadata regex parsing.
-  - `CorosApiClientTest` (6 tests): Direct HTTPS authentication, Bearer token authentication, blank token rejection, unauthenticated error handling, defensive activity & profile model defaults.
+  - `CorosApiClientTest` (10 tests): MockWebServer hermetic HTTP verification, direct HTTPS login, Bearer token auth, expired token failure handling, unauthenticated error rejection, defensive activity & detail model defaults.
   - `EvoLabAnalyzerTest` (5 tests): High-intensity exhaustion heuristics, key Long Run protection, threshold swapping, aerobic base absorption, on-device workout analysis.
   - `LapsDataModelsTest` (4 tests): Default sample validation, weekly mileage completion ratios, EvoLab productive status, 80/20 polarization integrity.
   - `PlanGeneratorTest` (3 tests): 80/20 Half-Marathon (40 workouts), Marathon progressive overload generation, and defensive calendar isolation when no calendar is targeted.

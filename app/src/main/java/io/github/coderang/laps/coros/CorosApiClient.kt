@@ -27,6 +27,14 @@ class CorosApiClient(
     private var accessToken: String? = null
     private var userId: String? = null
 
+    private fun getBaseUrl(): String {
+        return if (region.startsWith("http://") || region.startsWith("https://")) {
+            region.trimEnd('/')
+        } else {
+            "https://$region"
+        }
+    }
+
     data class CorosProfile(
         val userId: String = "",
         val nickname: String = "Runner",
@@ -78,7 +86,7 @@ class CorosApiClient(
         this.accessToken = token.trim()
         if (token.isBlank()) return Result.failure(IllegalArgumentException("Token is empty"))
         return try {
-            val url = "https://$region/activity/query?size=1&pageNumber=1"
+            val url = "${getBaseUrl()}/activity/query?size=1&pageNumber=1"
             val request = Request.Builder()
                 .url(url)
                 .get()
@@ -89,14 +97,20 @@ class CorosApiClient(
                 .build()
 
             client.newCall(request).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    Result.success(CorosProfile(nickname = "COROS Athlete"))
-                } else {
-                    Result.success(CorosProfile(nickname = "COROS Athlete"))
+                if (!resp.isSuccessful) {
+                    return Result.failure(IllegalStateException("Authentication failed with HTTP ${resp.code}"))
                 }
+                val body = resp.body?.string() ?: ""
+                val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+                val code = root.optString("result", root.optString("code", ""))
+                if (code.isNotEmpty() && code != "0000") {
+                    val msg = root.optString("message", "Invalid or expired token ($code)")
+                    return Result.failure(IllegalStateException(msg))
+                }
+                Result.success(CorosProfile(nickname = "COROS Athlete"))
             }
-        } catch (_: Exception) {
-            Result.success(CorosProfile(nickname = "COROS Athlete"))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -110,7 +124,7 @@ class CorosApiClient(
             }
 
             val request = Request.Builder()
-                .url("https://$region/account/login")
+                .url("${getBaseUrl()}/account/login")
                 .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
                 .addHeader("User-Agent", "Laps-Android/1.0")
                 .build()
@@ -181,7 +195,7 @@ class CorosApiClient(
     fun fetchActivities(limit: Int = 30): Result<List<CorosActivity>> {
         val token = accessToken ?: return Result.failure(IllegalStateException("Not authenticated"))
         return try {
-            val url = "https://$region/activity/query?size=$limit&pageNumber=1"
+            val url = "${getBaseUrl()}/activity/query?size=$limit&pageNumber=1"
             val request = Request.Builder()
                 .url(url)
                 .get()
@@ -192,11 +206,14 @@ class CorosApiClient(
                 .build()
 
             client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    return Result.failure(IllegalStateException("Activity fetch failed with HTTP ${resp.code}"))
+                }
                 val body = resp.body?.string() ?: ""
-                val root = JSONObject(body)
+                val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
                 val code = root.optString("result", root.optString("code", ""))
-                if (code != "0000" && !resp.isSuccessful) {
-                    val msg = root.optString("message", "Activity fetch failed ($code)")
+                if (code.isNotEmpty() && code != "0000") {
+                    val msg = root.optString("message", "Activity fetch failed").let { "$it ($code)" }
                     return Result.failure(IllegalStateException(msg))
                 }
                 val data = root.optJSONObject("data") ?: JSONObject()
@@ -204,7 +221,7 @@ class CorosApiClient(
 
                 val activities = mutableListOf<CorosActivity>()
                 for (i in 0 until list.length()) {
-                    val a = list.getJSONObject(i)
+                    val a = list.optJSONObject(i) ?: continue
                     val distMeters = a.optDouble("distance", a.optDouble("total", 0.0))
                     val distKm = distMeters / 1000.0
                     val durSec = a.optInt("totalTime", a.optInt("workoutTime", a.optInt("duration", 0)))
@@ -261,7 +278,7 @@ class CorosApiClient(
         val token = accessToken ?: return Result.failure(IllegalStateException("Not authenticated"))
         if (labelId.isBlank()) return Result.failure(IllegalArgumentException("labelId is blank"))
         return try {
-            val url = "https://$region/activity/detail/query?labelId=$labelId&sportType=$sportType"
+            val url = "${getBaseUrl()}/activity/detail/query?labelId=$labelId&sportType=$sportType"
             val emptyBody = "{}".toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
                 .url(url)
@@ -306,11 +323,11 @@ class CorosApiClient(
                 }
 
                 if (hrZonesRaw != null && hrZonesRaw.length() >= 6) {
-                    val z0 = hrZonesRaw.getJSONObject(0)
-                    val z1 = hrZonesRaw.getJSONObject(1)
-                    val secEasy = z0.optInt("second", 0) + z1.optInt("second", 0)
-                    val pctEasy = z0.optInt("percent", 0) + z1.optInt("percent", 0)
-                    val right0 = z1.optInt("rightScope", 155)
+                    val z0 = hrZonesRaw.optJSONObject(0)
+                    val z1 = hrZonesRaw.optJSONObject(1)
+                    val secEasy = (z0?.optInt("second", 0) ?: 0) + (z1?.optInt("second", 0) ?: 0)
+                    val pctEasy = (z0?.optInt("percent", 0) ?: 0) + (z1?.optInt("percent", 0) ?: 0)
+                    val right0 = z1?.optInt("rightScope", 155) ?: 155
                     hrZones.add(
                         io.github.coderang.laps.data.HrZoneBreakdown(
                             zoneIndex = 1,
@@ -329,7 +346,7 @@ class CorosApiClient(
                     )
                     for ((idx, label) in zoneLabels) {
                         if (idx < hrZonesRaw.length()) {
-                            val zi = hrZonesRaw.getJSONObject(idx)
+                            val zi = hrZonesRaw.optJSONObject(idx) ?: continue
                             val sec = zi.optInt("second", 0)
                             val left = zi.optInt("leftScope", 0)
                             val right = zi.optInt("rightScope", 200)
@@ -357,7 +374,7 @@ class CorosApiClient(
                         if (lap.optInt("type") == 10) {
                             val items = lap.optJSONArray("lapItemList") ?: continue
                             for (j in 0 until items.length()) {
-                                val item = items.getJSONObject(j)
+                                val item = items.optJSONObject(j) ?: continue
                                 val distKm = ((item.optDouble("distance", 0.0) / 100000.0) * 100.0).toInt() / 100.0
                                 if (distKm <= 0.01) continue
                                 val paceSec = item.optDouble("avgPace", 0.0).toInt()

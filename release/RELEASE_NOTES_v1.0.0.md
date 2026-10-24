@@ -30,7 +30,7 @@ We are excited to announce the first official release of **Laps** (`v1.0.0`), an
 
 | Asset | File | SHA-256 Checksum |
 | :--- | :--- | :--- |
-| **Release APK** | `Laps-v1.0.0.apk` | `6e988af72d13c03f3eb2f509d458b2ea382474305a21b989e44df2eb48925ddf` |
+| **Release APK** | `Laps-v1.0.0.apk` | `d0eaab7edf0e7aa9ceced63ba74f08d3318e6d76d9b162366639475fc249b826` |
 
 To verify the integrity on your machine before installing:
 ```bash

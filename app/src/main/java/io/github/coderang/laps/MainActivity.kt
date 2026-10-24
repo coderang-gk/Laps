@@ -58,6 +58,9 @@ import io.github.coderang.laps.widgets.*
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -144,6 +147,7 @@ class MainActivity : ComponentActivity() {
             var selectedRunForDetail by remember {
                 mutableStateOf(if (shouldOpenRunDetailFromIntent) payload.lastRun else null)
             }
+            val coroutineScope = rememberCoroutineScope()
 
             // Permissions launcher for Android 13+ Notifications & Android Calendar
             val permissionsLauncher = rememberLauncherForActivityResult(
@@ -183,7 +187,7 @@ class MainActivity : ComponentActivity() {
                     onResolveMissedWorkout = { action, targetDate ->
                         val missed = payload.missedWorkout ?: return@MainAppScaffold
                         isResolvingMissed = true
-                        Thread {
+                        coroutineScope.launch(Dispatchers.IO) {
                             val success = if (action == "SHIFT") {
                                 val cal = Calendar.getInstance()
                                 val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -195,7 +199,7 @@ class MainActivity : ComponentActivity() {
                                 CalendarSyncManager.skipWorkout(context, missed.eventId)
                             }
 
-                            runOnUiThread {
+                            withContext(Dispatchers.Main) {
                                 isResolvingMissed = false
                                 val updated = payload.copy(missedWorkout = null)
                                 payload = updated
@@ -209,7 +213,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                             }
-                        }.start()
+                        }
                     },
                     isResolvingMissed = isResolvingMissed,
                     onSyncClicked = {
@@ -1831,6 +1835,7 @@ private fun LapsOnboardingDialog(
     val calendars = remember { CalendarSyncManager.getAvailableCalendars(context) }
     var selectedCalendarId by remember { mutableLongStateOf(-1L) }
     var calendarExpanded by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = { /* Modal: require explicit choice */ },
@@ -2107,10 +2112,10 @@ private fun LapsOnboardingDialog(
                         }
                         isLoggingIn = true
                         errorMessage = null
-                        Thread {
+                        coroutineScope.launch(Dispatchers.IO) {
                             val client = io.github.coderang.laps.coros.CorosApiClient()
                             val authRes = client.authenticateWithToken(token.trim())
-                            (context as? ComponentActivity)?.runOnUiThread {
+                            withContext(Dispatchers.Main) {
                                 isLoggingIn = false
                                 authRes.onSuccess {
                                     LapsRepository.saveCorosToken(context, token.trim())
@@ -2122,7 +2127,7 @@ private fun LapsOnboardingDialog(
                                     errorMessage = "OAuth Token Error: ${err.message ?: "Invalid token"}"
                                 }
                             }
-                        }.start()
+                        }
                     } else {
                         if (email.isBlank() || password.isBlank()) {
                             errorMessage = "Please enter your COROS email and password."
@@ -2130,10 +2135,10 @@ private fun LapsOnboardingDialog(
                         }
                         isLoggingIn = true
                         errorMessage = null
-                        Thread {
+                        coroutineScope.launch(Dispatchers.IO) {
                             val client = io.github.coderang.laps.coros.CorosApiClient()
                             val loginRes = client.login(email.trim(), password.trim())
-                            (context as? ComponentActivity)?.runOnUiThread {
+                            withContext(Dispatchers.Main) {
                                 isLoggingIn = false
                                 loginRes.onSuccess {
                                     LapsRepository.saveCorosCredentials(context, email.trim(), password.trim())
@@ -2145,7 +2150,7 @@ private fun LapsOnboardingDialog(
                                     errorMessage = "COROS Login failed: ${err.message ?: "Invalid credentials"}"
                                 }
                             }
-                        }.start()
+                        }
                     }
                 },
                 enabled = !isLoggingIn
@@ -2497,6 +2502,7 @@ private fun PlanGeneratorDialog(
 
     val selectedCalId = LapsRepository.getSelectedCalendarId(context)
     val hasCalendar = selectedCalId > 0L
+    val coroutineScope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2643,7 +2649,7 @@ private fun PlanGeneratorDialog(
                         return@Button
                     }
                     isPublishing = true
-                    Thread {
+                    coroutineScope.launch(Dispatchers.IO) {
                         val cal = Calendar.getInstance().apply {
                             add(Calendar.WEEK_OF_YEAR, planWeeks)
                             set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
@@ -2657,7 +2663,7 @@ private fun PlanGeneratorDialog(
                             raceDateMillis = raceDateMillis,
                             planWeeks = planWeeks
                         )
-                        (context as? ComponentActivity)?.runOnUiThread {
+                        withContext(Dispatchers.Main) {
                             isPublishing = false
                             Toast.makeText(
                                 context,
@@ -2666,7 +2672,7 @@ private fun PlanGeneratorDialog(
                             ).show()
                             onPlanPublished()
                         }
-                    }.start()
+                    }
                 },
                 enabled = !isPublishing && hasCalendar
             ) {
