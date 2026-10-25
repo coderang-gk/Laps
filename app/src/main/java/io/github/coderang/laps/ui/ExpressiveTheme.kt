@@ -11,7 +11,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.toArgb
 
 /**
- * Pure Material You dynamic theming matching Canta:
+ * Pure Material You dynamic theming:
  * Automatically resolves the system accent and tonal palette directly from the user's
  * wallpaper via dynamicColorScheme (Android 12+ / API 31+).
  */

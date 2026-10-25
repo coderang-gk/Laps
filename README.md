@@ -41,7 +41,7 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 |:---:|:---:|:---:|
 | **Training Hub** | **12-Week Plan Schedule** | **Race Strategy & Roadmap** |
 | <img width="256" src="assets/screenshot_settings.jpg"> | <img width="256" src="assets/screenshot_missed_resolution.jpg"> | <img width="256" src="assets/screenshot_widgets_catalog.jpg"> |
-| **Dedicated Settings (Canta Style)** | **Adaptive AI Resolution** | **Material 3 Widgets** |
+| **Dedicated Full-Screen Settings** | **Adaptive AI Resolution** | **Material 3 Widgets** |
 
 ---
 
@@ -136,7 +136,7 @@ The resulting APK will be located at `app/build/outputs/apk/debug/app-debug.apk`
 
 ## Testing & Reliability
 
-Laps adopts a Canta-inspired hermetic testing architecture. All business logic, EvoLab physiological heuristics, 80/20 plan generation, COROS client auth, and calendar operations run on pure JVM with zero device emulator requirements using in-memory fakes (`FakeCalendarStore`):
+Laps adopts a robust hermetic testing architecture. All business logic, EvoLab physiological heuristics, 80/20 plan generation, COROS client auth, and calendar operations run on pure JVM with zero device emulator requirements using in-memory fakes (`FakeCalendarStore`):
 
 ```bash
 ./gradlew test

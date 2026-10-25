@@ -3,7 +3,7 @@ package io.github.coderang.laps.testing
 import io.github.coderang.laps.calendar.CalendarSyncManager
 
 /**
- * Hermetic in-memory Fake Calendar Store (matching Canta's testing philosophy).
+ * Hermetic in-memory Fake Calendar Store.
  * Runs on pure JVM without Android runtime or ContentProvider mocks.
  */
 class FakeCalendarStore : CalendarSyncManager.CalendarStore {

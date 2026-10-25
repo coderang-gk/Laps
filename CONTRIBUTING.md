@@ -30,7 +30,7 @@ The resulting debug binary will be located at `app/build/outputs/apk/debug/app-d
 
 ## 🧪 Testing Philosophy
 
-Laps follows a **Canta-style hermetic testing architecture**:
+Laps follows a **hermetic testing architecture**:
 - **Zero Heavy Device Mocks:** Business logic, calendar manipulation, and physiological EvoLab heuristics are decoupled from heavy Android framework classes via lightweight interfaces (e.g. `CalendarStore`).
 - **In-Memory Fakes:** Unit tests execute against pure-JVM in-memory fakes (`FakeCalendarStore`) rather than slow, brittle emulator mocks.
 - **Fast Feedback:** The entire unit test suite must execute in **<1 second** on standard hardware.
