@@ -92,7 +92,8 @@ data class ActivePlanInfo(
     val planWeeks: Int = 10,
     val startDateMillis: Long = 0L,
     val raceDateMillis: Long = 0L,
-    val calendarId: Long = -1L
+    val calendarId: Long = -1L,
+    val customRaceName: String = ""
 )
 
 data class RaceCountdownData(

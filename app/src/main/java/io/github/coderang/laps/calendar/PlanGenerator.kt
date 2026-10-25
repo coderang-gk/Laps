@@ -63,7 +63,8 @@ object PlanGenerator {
         runningDaysOfWeek: List<Int> = listOf(Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.FRIDAY, Calendar.SUNDAY),
         ltspPace: String = "4:56 /km",
         lthrBpm: Int = 172,
-        skipPastEvents: Boolean = false
+        skipPastEvents: Boolean = false,
+        customRaceName: String? = null
     ): List<PlanWorkoutItem> {
         val workouts = mutableListOf<PlanWorkoutItem>()
         val startMonday = when {
@@ -135,7 +136,8 @@ object PlanGenerator {
                 val (title, distKm, desc, wType) = when {
                     isSundayLongRun && week == planWeeks -> {
                         // Race Day!
-                        val rTitle = "🏁 RACE DAY: ${raceDistance.label} (${raceDistance.km}K)"
+                        val eventName = if (!customRaceName.isNullOrBlank()) customRaceName.trim() else raceDistance.label
+                        val rTitle = "🏁 RACE DAY: $eventName (${raceDistance.km}K)"
                         val rDesc = "Target Pace: $ltspPace. Fuel every 45 mins. Execute your negative split plan!"
                         Quad(rTitle, raceDistance.km, rDesc, "Race")
                     }

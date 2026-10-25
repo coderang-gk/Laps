@@ -31,6 +31,7 @@ object LapsRepository {
     private const val KEY_PLAN_START_MILLIS = "active_plan_start_millis"
     private const val KEY_PLAN_RACE_MILLIS = "active_plan_race_millis"
     private const val KEY_PLAN_CALENDAR_ID = "active_plan_calendar_id"
+    private const val KEY_PLAN_CUSTOM_RACE_NAME = "active_plan_custom_race_name"
 
     fun getActivePlan(context: Context): ActivePlanInfo? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -39,8 +40,9 @@ object LapsRepository {
         val start = prefs.getLong(KEY_PLAN_START_MILLIS, 0L)
         val race = prefs.getLong(KEY_PLAN_RACE_MILLIS, 0L)
         val calId = prefs.getLong(KEY_PLAN_CALENDAR_ID, -1L)
+        val customName = prefs.getString(KEY_PLAN_CUSTOM_RACE_NAME, "") ?: ""
         if (weeks <= 0 || start <= 0L || race <= 0L) return null
-        return ActivePlanInfo(dist, weeks, start, race, calId)
+        return ActivePlanInfo(dist, weeks, start, race, calId, customName)
     }
 
     fun saveActivePlan(context: Context, plan: ActivePlanInfo) {
@@ -51,6 +53,7 @@ object LapsRepository {
             .putLong(KEY_PLAN_START_MILLIS, plan.startDateMillis)
             .putLong(KEY_PLAN_RACE_MILLIS, plan.raceDateMillis)
             .putLong(KEY_PLAN_CALENDAR_ID, plan.calendarId)
+            .putString(KEY_PLAN_CUSTOM_RACE_NAME, plan.customRaceName)
             .apply()
     }
 
@@ -62,6 +65,7 @@ object LapsRepository {
             .remove(KEY_PLAN_START_MILLIS)
             .remove(KEY_PLAN_RACE_MILLIS)
             .remove(KEY_PLAN_CALENDAR_ID)
+            .remove(KEY_PLAN_CUSTOM_RACE_NAME)
             .apply()
     }
 
@@ -528,7 +532,12 @@ object LapsRepository {
                     else -> "AEROBIC BASE FOUNDATION"
                 }
 
-                val raceName = activePlan.distanceLabel.uppercase()
+                val distKey = activePlan.distanceLabel.uppercase()
+                val raceName = if (activePlan.customRaceName.isNotBlank()) {
+                    activePlan.customRaceName.trim().uppercase()
+                } else {
+                    distKey
+                }
                 val raceDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(raceTargetMillis))
 
                 RaceCountdownData(
@@ -539,17 +548,17 @@ object LapsRepository {
                     totalWeeks = totalWeeks,
                     phase = phaseName,
                     goalTime = when {
-                        raceName.contains("5K") -> "0:24:00"
-                        raceName.contains("10K") -> "0:49:30"
-                        raceName.contains("HALF") -> "1:45:00"
-                        raceName.contains("MARATHON") -> "3:40:00"
+                        distKey.contains("5K") -> "0:24:00"
+                        distKey.contains("10K") -> "0:49:30"
+                        distKey.contains("HALF") -> "1:45:00"
+                        distKey.contains("MARATHON") -> "3:40:00"
                         else -> "1:45:00"
                     },
                     goalPace = when {
-                        raceName.contains("5K") -> "4:48 /km"
-                        raceName.contains("10K") -> "4:57 /km"
-                        raceName.contains("HALF") -> "4:58 /km"
-                        raceName.contains("MARATHON") -> "5:12 /km"
+                        distKey.contains("5K") -> "4:48 /km"
+                        distKey.contains("10K") -> "4:57 /km"
+                        distKey.contains("HALF") -> "4:58 /km"
+                        distKey.contains("MARATHON") -> "5:12 /km"
                         else -> "4:58 /km"
                     },
                     currentLtsp = profile.ltspPace.ifBlank { "4:56 /km" },

@@ -836,7 +836,11 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = if (isUpcomingPlan) {
-                                    "${activePlan.planWeeks}-Week ${activePlan.distanceLabel} starts next week"
+                                    if (activePlan.customRaceName.isNotBlank()) {
+                                        "${activePlan.customRaceName} (${activePlan.planWeeks}w · ${activePlan.distanceLabel}) starts next week"
+                                    } else {
+                                        "${activePlan.planWeeks}-Week ${activePlan.distanceLabel} starts next week"
+                                    }
                                 } else {
                                     "Build an 80/20 Plan (1-Tap)"
                                 },
@@ -959,11 +963,18 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
+                            val bannerTitle = if (activePlan.customRaceName.isNotBlank()) {
+                                "🚀 ${activePlan.customRaceName.uppercase()} (${activePlan.planWeeks}W ${activePlan.distanceLabel.uppercase()})"
+                            } else {
+                                "🚀 ${activePlan.planWeeks}-WEEK ${activePlan.distanceLabel.uppercase()} PLAN"
+                            }
                             Text(
-                                text = "🚀 ${activePlan.planWeeks}-WEEK ${activePlan.distanceLabel.uppercase()} PLAN",
+                                text = bannerTitle,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             val startFmt = SimpleDateFormat("EEE, MMM d", Locale.US).format(Date(activePlan.startDateMillis))
                             val daysUntil = ((activePlan.startDateMillis - nowMillis) / 86400000L + 1).toInt().coerceAtLeast(1)
@@ -1697,9 +1708,9 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
                     val isUpcomingPlan = payload.activePlan != null && payload.activePlan.startDateMillis > System.currentTimeMillis()
                     val statusText = if (rc.daysLeft > 0) {
                         if (isUpcomingPlan || rc.currentWeek == 0) {
-                            "${rc.raceName.take(12)} · Starts Mon"
+                            "🏁 Starts Mon · ${rc.daysLeft}d"
                         } else {
-                            "${rc.raceName.take(12)} · ${rc.daysLeft}d"
+                            "🏁 ${rc.daysLeft}d to Race"
                         }
                     } else {
                         "COROS · ${tl.statusBadge}"
@@ -1709,7 +1720,9 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1837,6 +1850,65 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
                         ) {
                             Text(
                                 text = "Live",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (payload.activePlan != null || rc.daysLeft > 0) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "TARGET RACE · ${rc.daysLeft} DAYS AWAY",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = rc.raceName,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            val isUpcomingPlan = payload.activePlan != null && payload.activePlan.startDateMillis > System.currentTimeMillis()
+                            val subtitleText = if (isUpcomingPlan || rc.currentWeek == 0) {
+                                "${rc.goalPace} target  ·  ${rc.phase}"
+                            } else {
+                                "Week ${rc.currentWeek} of ${rc.totalWeeks}  ·  ${rc.phase}"
+                            }
+                            Text(
+                                text = subtitleText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "${rc.daysLeft}d",
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -2888,6 +2960,7 @@ private fun PlanGeneratorDialog(
 ) {
     val context = LocalContext.current
     val activePlan = remember { LapsRepository.getActivePlan(context) }
+    var customRaceName by remember { mutableStateOf(activePlan?.customRaceName ?: "") }
     var selectedDistance by remember {
         mutableStateOf(
             PlanGenerator.RaceDistance.entries.find { it.label.equals(activePlan?.distanceLabel, ignoreCase = true) }
@@ -2938,8 +3011,13 @@ private fun PlanGeneratorDialog(
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Bold
                                     )
+                                    val currentPlanTitle = if (activePlan.customRaceName.isNotBlank()) {
+                                        "${activePlan.customRaceName} (${activePlan.planWeeks}w · ${activePlan.distanceLabel})"
+                                    } else {
+                                        "${activePlan.planWeeks}-Week ${activePlan.distanceLabel}"
+                                    }
                                     Text(
-                                        text = "${activePlan.planWeeks}-Week ${activePlan.distanceLabel}",
+                                        text = currentPlanTitle,
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -3012,6 +3090,22 @@ private fun PlanGeneratorDialog(
                     text = "Build a scientifically periodized 80/20 plan tailored to your COROS threshold pace & heart rate zones, published directly to your Google Calendar.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Race / Event Name (Optional)",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = customRaceName,
+                    onValueChange = { customRaceName = it },
+                    placeholder = { Text("e.g. Hyderabad HM, Mumbai Marathon") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -3113,10 +3207,12 @@ private fun PlanGeneratorDialog(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "🏁 TARGET RACE DAY",
+                                text = if (customRaceName.isNotBlank()) "🏁 ${customRaceName.trim().uppercase()}" else "🏁 TARGET RACE DAY",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
@@ -3212,13 +3308,15 @@ private fun PlanGeneratorDialog(
                         val raceSunday = (startCal.clone() as Calendar).apply {
                             add(Calendar.DAY_OF_YEAR, (planWeeks - 1) * 7 + 6)
                         }
+                        val trimmedCustomRaceName = customRaceName.trim()
                         PlanGenerator.generatePlan(
                             context = context,
                             calendarId = selectedCalId,
                             raceDistance = selectedDistance,
                             startDateMillis = startCal.timeInMillis,
                             planWeeks = planWeeks,
-                            skipPastEvents = true
+                            skipPastEvents = true,
+                            customRaceName = trimmedCustomRaceName
                         )
                         LapsRepository.saveActivePlan(
                             context,
@@ -3227,14 +3325,16 @@ private fun PlanGeneratorDialog(
                                 planWeeks = planWeeks,
                                 startDateMillis = startCal.timeInMillis,
                                 raceDateMillis = raceSunday.timeInMillis,
-                                calendarId = selectedCalId
+                                calendarId = selectedCalId,
+                                customRaceName = trimmedCustomRaceName
                             )
                         )
                         withContext(Dispatchers.Main) {
                             isPublishing = false
+                            val planDisplayName = if (trimmedCustomRaceName.isNotBlank()) trimmedCustomRaceName else selectedDistance.label
                             Toast.makeText(
                                 context,
-                                "Published $planWeeks-week ${selectedDistance.label} plan starting ${SimpleDateFormat("MMM d", Locale.US).format(startCal.time)}!",
+                                "Published $planWeeks-week $planDisplayName plan starting ${SimpleDateFormat("MMM d", Locale.US).format(startCal.time)}!",
                                 Toast.LENGTH_LONG
                             ).show()
                             onPlanPublished()
