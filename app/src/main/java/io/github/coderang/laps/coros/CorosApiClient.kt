@@ -17,17 +17,19 @@ import java.util.zip.GZIPInputStream
  * Zero external servers required.
  */
 class CorosApiClient(
-    private val region: String = "teamapi.coros.com"
+    var region: String = "teamapi.coros.com"
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
         .build()
 
-    private var accessToken: String? = null
-    private var userId: String? = null
+    var accessToken: String? = null
+        private set
+    var userId: String? = null
+        private set
 
-    private fun getBaseUrl(): String {
+    fun getBaseUrl(): String {
         return if (region.startsWith("http://") || region.startsWith("https://")) {
             region.trimEnd('/')
         } else {
@@ -80,99 +82,150 @@ class CorosApiClient(
 
     /**
      * Authenticates using an official COROS OAuth 2.0 / MCP Bearer token.
-     * Keeps user password 100% off-device.
+     * Keeps user password 100% off-device. Automatically tests regional servers (Global, EU, CN).
      */
     fun authenticateWithToken(token: String): Result<CorosProfile> {
-        this.accessToken = token.trim()
-        if (token.isBlank()) return Result.failure(IllegalArgumentException("Token is empty"))
-        return try {
-            val url = "${getBaseUrl()}/activity/query?size=1&pageNumber=1"
-            val request = Request.Builder()
-                .url(url)
-                .get()
-                .addHeader("accesstoken", token.trim())
-                .addHeader("accessToken", token.trim())
-                .addHeader("Authorization", "Bearer ${token.trim()}")
-                .addHeader("User-Agent", "Laps-Android/1.0")
-                .build()
+        val cleanToken = token.trim()
+        if (cleanToken.isBlank()) return Result.failure(IllegalArgumentException("Token is empty"))
+        this.accessToken = cleanToken
 
-            client.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    return Result.failure(IllegalStateException("Authentication failed with HTTP ${resp.code}"))
+        val regionsToTry = linkedSetOf(
+            region,
+            "teamapi.coros.com",
+            "teameuapi.coros.com",
+            "teamcnapi.coros.com"
+        ).toList()
+
+        var lastException: Exception? = null
+
+        for (targetRegion in regionsToTry) {
+            try {
+                val targetBase = if (targetRegion.startsWith("http")) targetRegion.trimEnd('/') else "https://$targetRegion"
+                val url = "$targetBase/activity/query?size=1&pageNumber=1"
+                val request = Request.Builder()
+                    .url(url)
+                    .get()
+                    .header("accesstoken", cleanToken)
+                    .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
+                    .build()
+
+                client.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        lastException = IllegalStateException("Authentication failed with HTTP ${resp.code}")
+                        return@use
+                    }
+                    val body = resp.body?.string() ?: ""
+                    val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+                    val code = root.optString("result", root.optString("code", ""))
+                    if (code == "0000") {
+                        this.region = targetRegion
+                        return Result.success(CorosProfile(nickname = "COROS Athlete"))
+                    } else if (code == "1019") {
+                        lastException = IllegalStateException(root.optString("message", "Invalid or expired token ($code)"))
+                    } else {
+                        val msg = root.optString("message", "Authentication error ($code)")
+                        lastException = IllegalStateException(msg)
+                    }
                 }
-                val body = resp.body?.string() ?: ""
-                val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
-                val code = root.optString("result", root.optString("code", ""))
-                if (code.isNotEmpty() && code != "0000") {
-                    val msg = root.optString("message", "Invalid or expired token ($code)")
-                    return Result.failure(IllegalStateException(msg))
-                }
-                Result.success(CorosProfile(nickname = "COROS Athlete"))
+            } catch (e: Exception) {
+                lastException = e
             }
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+        return Result.failure(lastException ?: IllegalStateException("COROS token authentication failed"))
     }
 
     fun login(email: String, rawPassword: String): Result<CorosProfile> {
-        return try {
-            val md5Pwd = md5(rawPassword)
-            val jsonBody = JSONObject().apply {
-                put("account", email.trim())
-                put("pwd", md5Pwd)
-                put("accountType", 2)
-            }
-
-            val request = Request.Builder()
-                .url("${getBaseUrl()}/account/login")
-                .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
-                .addHeader("User-Agent", "Laps-Android/1.0")
-                .build()
-
-            client.newCall(request).execute().use { resp ->
-                val body = resp.body?.string() ?: ""
-                val root = JSONObject(body)
-                val code = root.optString("result", "")
-                if (code != "0000") {
-                    val msg = root.optString("message", "Authentication failed ($code)")
-                    return Result.failure(IllegalStateException(msg))
-                }
-
-                val data = root.optJSONObject("data") ?: JSONObject()
-                accessToken = data.optString("accessToken")
-                userId = data.optString("userId")
-
-                val zoneData = data.optJSONObject("zoneData") ?: try {
-                    val zdStr = data.optString("zoneData")
-                    if (zdStr.isNotBlank()) JSONObject(zdStr) else JSONObject()
-                } catch (_: Exception) { JSONObject() }
-
-                val ltspSec = if (data.has("ltsp") && data.optInt("ltsp") > 0) {
-                    data.optInt("ltsp")
-                } else {
-                    zoneData.optInt("ltsp", 296)
-                }
-
-                val rhr = if (data.has("rhr") && data.optInt("rhr") > 0) data.optInt("rhr") else zoneData.optInt("rhr", 44)
-                val maxHr = if (data.has("maxHr") && data.optInt("maxHr") > 0) data.optInt("maxHr") else zoneData.optInt("maxHr", 195)
-                val lthr = if (data.has("lthr") && data.optInt("lthr") > 0) data.optInt("lthr") else zoneData.optInt("lthr", 172)
-                val weight = if (data.has("weight") && data.optDouble("weight") > 0.0) data.optDouble("weight") else 75.0
-
-                val profile = CorosProfile(
-                    userId = userId ?: "",
-                    nickname = data.optString("nickname", "Runner"),
-                    rhr = rhr,
-                    maxHr = maxHr,
-                    lthr = lthr,
-                    ltspSec = ltspSec,
-                    ltspPace = formatPace(ltspSec),
-                    weightKg = weight
-                )
-                Result.success(profile)
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
+        val md5Pwd = md5(rawPassword)
+        val jsonBody = JSONObject().apply {
+            put("account", email.trim())
+            put("pwd", md5Pwd)
+            put("accountType", 2)
         }
+        val mediaType = "application/json;charset=UTF-8".toMediaType()
+
+        val regionsToTry = linkedSetOf(
+            region,
+            "teamapi.coros.com",
+            "teameuapi.coros.com",
+            "teamcnapi.coros.com"
+        ).toList()
+
+        var lastException: Exception? = null
+
+        for (targetRegion in regionsToTry) {
+            try {
+                val targetBase = if (targetRegion.startsWith("http")) targetRegion.trimEnd('/') else "https://$targetRegion"
+                val url = "$targetBase/account/login"
+                val request = Request.Builder()
+                    .url(url)
+                    .post(jsonBody.toString().toRequestBody(mediaType))
+                    .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
+                    .header("Content-Type", "application/json;charset=UTF-8")
+                    .build()
+
+                client.newCall(request).execute().use { resp ->
+                    val body = resp.body?.string() ?: ""
+                    val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+                    val code = root.optString("result", root.optString("code", ""))
+
+                    if (code == "0000") {
+                        val data = root.optJSONObject("data") ?: JSONObject()
+                        val token = data.optString("accessToken")
+                        val uId = data.optString("userId")
+                        val regionId = data.optInt("regionId", 0)
+
+                        val resolvedRegion = when (regionId) {
+                            2 -> "teameuapi.coros.com"
+                            3 -> "teamcnapi.coros.com"
+                            1 -> "teamapi.coros.com"
+                            else -> targetRegion
+                        }
+                        this.region = resolvedRegion
+                        this.accessToken = token
+                        this.userId = uId
+
+                        val zoneData = data.optJSONObject("zoneData") ?: try {
+                            val zdStr = data.optString("zoneData")
+                            if (zdStr.isNotBlank()) JSONObject(zdStr) else JSONObject()
+                        } catch (_: Exception) { JSONObject() }
+
+                        val ltspSec = if (data.has("ltsp") && data.optInt("ltsp") > 0) {
+                            data.optInt("ltsp")
+                        } else {
+                            zoneData.optInt("ltsp", 296)
+                        }
+
+                        val rhr = if (data.has("rhr") && data.optInt("rhr") > 0) data.optInt("rhr") else zoneData.optInt("rhr", 44)
+                        val maxHr = if (data.has("maxHr") && data.optInt("maxHr") > 0) data.optInt("maxHr") else zoneData.optInt("maxHr", 195)
+                        val lthr = if (data.has("lthr") && data.optInt("lthr") > 0) data.optInt("lthr") else zoneData.optInt("lthr", 172)
+                        val weight = if (data.has("weight") && data.optDouble("weight") > 0.0) data.optDouble("weight") else 75.0
+
+                        val profile = CorosProfile(
+                            userId = uId,
+                            nickname = data.optString("nickname", "Runner"),
+                            rhr = rhr,
+                            maxHr = maxHr,
+                            lthr = lthr,
+                            ltspSec = ltspSec,
+                            ltspPace = formatPace(ltspSec),
+                            weightKg = weight
+                        )
+                        return Result.success(profile)
+                    } else if (code == "1030") {
+                        val msg = root.optString("message", "Credentials do not match records ($code)")
+                        lastException = IllegalStateException(msg)
+                    } else {
+                        val msg = root.optString("message", "Authentication failed ($code)")
+                        lastException = IllegalStateException(msg)
+                    }
+                }
+            } catch (e: Exception) {
+                lastException = e
+            }
+        }
+
+        return Result.failure(lastException ?: IllegalStateException("COROS login failed"))
     }
 
     data class CorosActivityDetail(
@@ -199,10 +252,8 @@ class CorosApiClient(
             val request = Request.Builder()
                 .url(url)
                 .get()
-                .addHeader("accesstoken", token)
-                .addHeader("accessToken", token)
-                .addHeader("Authorization", "Bearer $token")
-                .addHeader("User-Agent", "Laps-Android/1.0")
+                .header("accesstoken", token)
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
                 .build()
 
             client.newCall(request).execute().use { resp ->
@@ -279,14 +330,13 @@ class CorosApiClient(
         if (labelId.isBlank()) return Result.failure(IllegalArgumentException("labelId is blank"))
         return try {
             val url = "${getBaseUrl()}/activity/detail/query?labelId=$labelId&sportType=$sportType"
-            val emptyBody = "{}".toRequestBody("application/json".toMediaType())
+            val emptyBody = "{}".toRequestBody("application/json;charset=UTF-8".toMediaType())
             val request = Request.Builder()
                 .url(url)
                 .post(emptyBody)
-                .addHeader("accesstoken", token)
-                .addHeader("accessToken", token)
-                .addHeader("Authorization", "Bearer $token")
-                .addHeader("User-Agent", "Laps-Android/1.0")
+                .header("accesstoken", token)
+                .header("Content-Type", "application/json;charset=UTF-8")
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
                 .build()
 
             client.newCall(request).execute().use { resp ->

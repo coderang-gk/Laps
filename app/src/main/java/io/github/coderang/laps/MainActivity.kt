@@ -2541,7 +2541,7 @@ private fun LapsOnboardingDialog(
                             withContext(Dispatchers.Main) {
                                 isLoggingIn = false
                                 authRes.onSuccess {
-                                    LapsRepository.saveCorosToken(context, token.trim())
+                                    LapsRepository.saveCorosToken(context, token.trim(), region = client.region)
                                     LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                                     LapsRepository.setSetupCompleted(context, true)
                                     Toast.makeText(context, "Connected via COROS OAuth!", Toast.LENGTH_SHORT).show()
@@ -2564,7 +2564,7 @@ private fun LapsOnboardingDialog(
                             withContext(Dispatchers.Main) {
                                 isLoggingIn = false
                                 loginRes.onSuccess {
-                                    LapsRepository.saveCorosCredentials(context, email.trim(), password.trim())
+                                    LapsRepository.saveCorosCredentials(context, email.trim(), password.trim(), region = client.region)
                                     LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                                     LapsRepository.setSetupCompleted(context, true)
                                     Toast.makeText(context, "Connected to COROS Training Hub!", Toast.LENGTH_SHORT).show()
@@ -2623,7 +2623,8 @@ private fun LapsSettingsScreen(
     var showPassword by remember { mutableStateOf(false) }
     var geminiKey by remember { mutableStateOf(savedGemini) }
     var selectedCalendarId by remember { mutableLongStateOf(savedCalId) }
-    var isOAuthMode by remember { mutableStateOf(savedToken.isNotBlank() || (savedEmail.isBlank() && savedPassword.isBlank())) }
+    var isOAuthMode by remember { mutableStateOf(savedToken.isNotBlank() && savedEmail.isBlank()) }
+    var isSaving by remember { mutableStateOf(false) }
 
     var calendars by remember { mutableStateOf(CalendarSyncManager.getAvailableCalendars(context)) }
     var calendarExpanded by remember { mutableStateOf(false) }
@@ -2647,20 +2648,68 @@ private fun LapsSettingsScreen(
                 actions = {
                     Button(
                         onClick = {
-                            if (isOAuthMode) {
-                                LapsRepository.saveCorosToken(context, token)
+                            if (isSaving) return@Button
+                            if (isOAuthMode && token.isNotBlank()) {
+                                isSaving = true
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = LapsRepository.getCorosRegion(context))
+                                    val authRes = client.authenticateWithToken(token.trim())
+                                    withContext(Dispatchers.Main) {
+                                        isSaving = false
+                                        authRes.onSuccess {
+                                            LapsRepository.saveCorosToken(context, token.trim(), region = client.region)
+                                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                            LapsRepository.saveGeminiKey(context, geminiKey)
+                                            LapsRepository.setSetupCompleted(context, true)
+                                            onSaved()
+                                        }.onFailure { err ->
+                                            Toast.makeText(context, "OAuth Token Error: ${err.message ?: "Invalid token"}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            } else if (!isOAuthMode && email.isNotBlank() && password.isNotBlank()) {
+                                isSaving = true
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = LapsRepository.getCorosRegion(context))
+                                    val loginRes = client.login(email.trim(), password.trim())
+                                    withContext(Dispatchers.Main) {
+                                        isSaving = false
+                                        loginRes.onSuccess {
+                                            LapsRepository.saveCorosCredentials(context, email.trim(), password.trim(), region = client.region)
+                                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                            LapsRepository.saveGeminiKey(context, geminiKey)
+                                            LapsRepository.setSetupCompleted(context, true)
+                                            onSaved()
+                                        }.onFailure { err ->
+                                            Toast.makeText(context, "Login failed: ${err.message ?: "Invalid credentials"}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
                             } else {
-                                LapsRepository.saveCorosCredentials(context, email, password)
+                                if (isOAuthMode) {
+                                    LapsRepository.saveCorosToken(context, token)
+                                } else {
+                                    LapsRepository.saveCorosCredentials(context, email, password)
+                                }
+                                LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                LapsRepository.saveGeminiKey(context, geminiKey)
+                                LapsRepository.setSetupCompleted(context, true)
+                                onSaved()
                             }
-                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
-                            LapsRepository.saveGeminiKey(context, geminiKey)
-                            LapsRepository.setSetupCompleted(context, true)
-                            onSaved()
                         },
+                        enabled = !isSaving,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
-                        Text("Save & Sync", fontWeight = FontWeight.Bold)
+                        if (isSaving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Text("Save & Sync", fontWeight = FontWeight.Bold)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

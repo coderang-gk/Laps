@@ -19,6 +19,7 @@ object LapsRepository {
     private const val KEY_COROS_EMAIL = "coros_email"
     private const val KEY_COROS_PASSWORD = "coros_password"
     private const val KEY_COROS_TOKEN = "coros_access_token"
+    private const val KEY_COROS_REGION = "coros_region"
     private const val KEY_CALENDAR_ID = "selected_calendar_id"
     private const val KEY_RACE_NAME = "race_name"
     private const val KEY_RACE_DATE_MILLIS = "race_date_millis"
@@ -93,11 +94,16 @@ object LapsRepository {
         return prefs.getString(KEY_COROS_TOKEN, "") ?: ""
     }
 
-    fun saveCorosToken(context: Context, token: String) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    fun saveCorosToken(context: Context, token: String, region: String? = null) {
+        val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_COROS_TOKEN, token.trim())
-            .apply()
+            .remove(KEY_COROS_EMAIL)
+            .remove(KEY_COROS_PASSWORD)
+        if (!region.isNullOrBlank()) {
+            editor.putString(KEY_COROS_REGION, region.trim())
+        }
+        editor.apply()
     }
 
     fun getCorosCredentials(context: Context): Pair<String, String> {
@@ -108,11 +114,27 @@ object LapsRepository {
         )
     }
 
-    fun saveCorosCredentials(context: Context, email: String, pwd: String) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    fun saveCorosCredentials(context: Context, email: String, pwd: String, region: String? = null) {
+        val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_COROS_EMAIL, email.trim())
             .putString(KEY_COROS_PASSWORD, pwd.trim())
+            .remove(KEY_COROS_TOKEN)
+        if (!region.isNullOrBlank()) {
+            editor.putString(KEY_COROS_REGION, region.trim())
+        }
+        editor.apply()
+    }
+
+    fun getCorosRegion(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_COROS_REGION, "teamapi.coros.com") ?: "teamapi.coros.com"
+    }
+
+    fun saveCorosRegion(context: Context, region: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_COROS_REGION, region.trim())
             .apply()
     }
 
@@ -126,6 +148,7 @@ object LapsRepository {
             .remove(KEY_COROS_EMAIL)
             .remove(KEY_COROS_PASSWORD)
             .remove(KEY_COROS_TOKEN)
+            .remove(KEY_COROS_REGION)
             .remove(KEY_GEMINI_KEY)
             .putBoolean(KEY_SETUP_COMPLETED, false)
             .apply()
@@ -183,22 +206,42 @@ object LapsRepository {
     fun syncOnDevice(context: Context): Result<LapsPayload> {
         val token = getCorosToken(context)
         val (email, password) = getCorosCredentials(context)
+        val savedRegion = getCorosRegion(context)
         if (token.isBlank() && (email.isBlank() || password.isBlank())) {
             return Result.success(cachedPayload) // Demo fallback state
         }
 
         return try {
-            val coros = CorosApiClient()
+            val coros = CorosApiClient(region = savedRegion)
             val profile = if (token.isNotBlank()) {
                 val tokenResult = coros.authenticateWithToken(token)
                 if (tokenResult.isFailure) {
-                    return Result.failure(tokenResult.exceptionOrNull() ?: IllegalStateException("COROS token authentication failed"))
+                    // Gracefully fallback to email/pwd if token is stale/invalid
+                    if (email.isNotBlank() && password.isNotBlank()) {
+                        val loginResult = coros.login(email, password)
+                        if (loginResult.isFailure) {
+                            return Result.failure(loginResult.exceptionOrNull() ?: IllegalStateException("COROS authentication failed"))
+                        }
+                        if (coros.region != savedRegion) {
+                            saveCorosRegion(context, coros.region)
+                        }
+                        loginResult.getOrNull() ?: CorosApiClient.CorosProfile()
+                    } else {
+                        return Result.failure(tokenResult.exceptionOrNull() ?: IllegalStateException("COROS token authentication failed"))
+                    }
+                } else {
+                    if (coros.region != savedRegion) {
+                        saveCorosRegion(context, coros.region)
+                    }
+                    tokenResult.getOrNull() ?: CorosApiClient.CorosProfile(nickname = "COROS Athlete")
                 }
-                tokenResult.getOrNull() ?: CorosApiClient.CorosProfile(nickname = "COROS Athlete")
             } else {
                 val loginResult = coros.login(email, password)
                 if (loginResult.isFailure) {
                     return Result.failure(loginResult.exceptionOrNull() ?: IllegalStateException("COROS login failed"))
+                }
+                if (coros.region != savedRegion) {
+                    saveCorosRegion(context, coros.region)
                 }
                 loginResult.getOrNull() ?: CorosApiClient.CorosProfile()
             }
