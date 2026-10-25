@@ -37,11 +37,11 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 
 ## Screenshots
 
-| <img width="256" src="assets/screenshot_hub.jpg"> | <img width="256" src="assets/screenshot_coaching.jpg"> | <img width="256" src="assets/screenshot_missed_resolution.jpg"> |
+| <img width="256" src="assets/screenshot_hub.jpg"> | <img width="256" src="assets/screenshot_plan_generator.jpg"> | <img width="256" src="assets/screenshot_race_strategy.jpg"> |
 |:---:|:---:|:---:|
-| Training Hub | Post-Run Coaching | Adaptive Resolution |
-| <img width="256" src="assets/screenshot_plan_generator.jpg"> | <img width="256" src="assets/screenshot_widgets_catalog.jpg"> | <img width="256" src="assets/screenshot_widgets_sculptural.jpg"> |
-| 80/20 Plan Generator | Material 3 Widgets | Sculptural Dials |
+| **Training Hub** | **12-Week Plan Schedule** | **Race Strategy & Roadmap** |
+| <img width="256" src="assets/screenshot_settings.jpg"> | <img width="256" src="assets/screenshot_missed_resolution.jpg"> | <img width="256" src="assets/screenshot_widgets_catalog.jpg"> |
+| **Dedicated Settings (Canta Style)** | **Adaptive AI Resolution** | **Material 3 Widgets** |
 
 ---
 
@@ -60,11 +60,11 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or Google
 - Reads upcoming scheduled workouts from any local or Google calendar on your device.
 - Directly updates event titles and timestamps when workouts are completed, shifted, or skipped.
 
-### 80/20 Periodized Plan Generator
-- Generates structured training plans for **5K**, **10K**, **Half Marathon**, and **Marathon**.
-- Periodizes mileage across 6 to 16-week cycles with progressive overload and planned taper phases.
-- Automatically calculates weekly quality splits (Threshold, Tempo, Strides) and Sunday Long Runs aligned to your EvoLab threshold pace.
-- Publishes all structured workouts directly into your chosen Google Calendar in one tap.
+### 80/20 Periodized Plan & Race Hub
+- **Interactive Multi-Week Schedule**: Tapping **Next Workout** opens a full 10–16 week collapsible calendar schedule with current week expanded, detailed workout splits (Threshold, Recovery Easy, Strides, Sunday Long Runs), and race-day highlights.
+- **Race Strategy & Roadmap**: Tapping **Target Race** surfaces readiness analytics: days remaining countdown, COROS EvoLab readiness status, goal finish pace vs. current lactate threshold pace delta, and periodization macrocycle phases (Aerobic Base, Threshold Overload, Peak Taper).
+- **Custom Event Naming & Distance Presets**: Custom race branding (e.g. *Hyderabad HM*, *Mumbai Marathon*), distances (**5K**, **10K**, **Half Marathon**, **Marathon**), and duration chips (6w to 16w).
+- **One-Tap Calendar Publishing**: Direct calendar generation writing structured intervals with target pace and heart rate zones directly to Android's native `CalendarContract`.
 
 ### Dynamic Missed-Workout Resolution (Adaptive AI Coaching)
 - When a scheduled training run is missed, Laps evaluates your 7-day acute training load, upcoming key sessions, and threshold pace.
@@ -142,7 +142,7 @@ Laps adopts a Canta-inspired hermetic testing architecture. All business logic, 
 ./gradlew test
 ```
 
-- **Execution Speed**: **28 unit tests** execute in **<500ms** on pure JVM.
+- **Execution Speed**: **32 unit tests** execute in **<500ms** on pure JVM.
 - **Test Matrix**:
   - `CalendarSyncManagerTest` (6 tests): Skip flow (`[SKIPPED]` title tagging), Shift flow (automatic DOW title rewrite e.g. `W3 Tue` $\rightarrow$ `W3 Wed` and scheduled time preservation), metadata regex parsing.
   - `CorosApiClientTest` (10 tests): MockWebServer hermetic HTTP verification, direct HTTPS login, Bearer token auth, expired token failure handling, unauthenticated error rejection, defensive activity & detail model defaults.
