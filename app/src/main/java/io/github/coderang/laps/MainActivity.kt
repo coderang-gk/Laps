@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -62,6 +63,12 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+enum class AppScreen {
+    MAIN,
+    SETTINGS,
+    PLAN_RACE_HUB
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -140,8 +147,8 @@ class MainActivity : ComponentActivity() {
             var isSyncing by remember { mutableStateOf(false) }
             var selectedSection by remember { mutableIntStateOf(0) } // 0 = Training Hub, 1 = Widgets
             var selectedFilter by remember { mutableIntStateOf(0) } // 0 = All, 1 = Sculptural, 2 = Cards
-            var showSettingsDialog by remember { mutableStateOf(false) }
-            var showPlanDialog by remember { mutableStateOf(false) }
+            var currentScreen by remember { mutableStateOf(AppScreen.MAIN) }
+            var initialPlanHubTab by remember { mutableIntStateOf(0) } // 0 = Schedule, 1 = Strategy, 2 = Customizer
             val hasCredentials = remember(trigger) { LapsRepository.hasCredentials(context) }
             var showOnboarding by remember(trigger) { mutableStateOf(!hasCredentials && !LapsRepository.isSetupCompleted(context)) }
             var isResolvingMissed by remember { mutableStateOf(false) }
@@ -149,6 +156,10 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(if (shouldOpenRunDetailFromIntent) payload.lastRun else null)
             }
             val coroutineScope = rememberCoroutineScope()
+
+            BackHandler(enabled = currentScreen != AppScreen.MAIN) {
+                currentScreen = AppScreen.MAIN
+            }
 
             // Permissions launcher for Android 13+ Notifications & Android Calendar
             val permissionsLauncher = rememberLauncherForActivityResult(
@@ -176,137 +187,152 @@ class MainActivity : ComponentActivity() {
             }
 
             MaterialTheme(colorScheme = colorScheme) {
-                MainAppScaffold(
-                    payload = payload,
-                    isSyncing = isSyncing,
-                    selectedSection = selectedSection,
-                    onSectionSelected = { selectedSection = it },
-                    selectedFilter = selectedFilter,
-                    onFilterSelected = { selectedFilter = it },
-                    catalog = catalog,
-                    onRunClicked = { run -> selectedRunForDetail = run },
-                    onResolveMissedWorkout = { action, targetDate ->
-                        val missed = payload.missedWorkout ?: return@MainAppScaffold
-                        isResolvingMissed = true
-                        coroutineScope.launch(Dispatchers.IO) {
-                            val success = if (action == "SHIFT") {
-                                val cal = Calendar.getInstance()
-                                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                                val targetTime = try {
-                                    sdf.parse(targetDate)?.time ?: (System.currentTimeMillis() + 86400000L)
-                                } catch (_: Exception) { System.currentTimeMillis() + 86400000L }
-                                CalendarSyncManager.shiftWorkout(context, missed.eventId, targetTime)
-                            } else {
-                                CalendarSyncManager.skipWorkout(context, missed.eventId)
-                            }
+                when (currentScreen) {
+                    AppScreen.MAIN -> {
+                        MainAppScaffold(
+                            payload = payload,
+                            isSyncing = isSyncing,
+                            selectedSection = selectedSection,
+                            onSectionSelected = { selectedSection = it },
+                            selectedFilter = selectedFilter,
+                            onFilterSelected = { selectedFilter = it },
+                            catalog = catalog,
+                            onRunClicked = { run -> selectedRunForDetail = run },
+                            onResolveMissedWorkout = { action, targetDate ->
+                                val missed = payload.missedWorkout ?: return@MainAppScaffold
+                                isResolvingMissed = true
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    val success = if (action == "SHIFT") {
+                                        val cal = Calendar.getInstance()
+                                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                                        val targetTime = try {
+                                            sdf.parse(targetDate)?.time ?: (System.currentTimeMillis() + 86400000L)
+                                        } catch (_: Exception) { System.currentTimeMillis() + 86400000L }
+                                        CalendarSyncManager.shiftWorkout(context, missed.eventId, targetTime)
+                                    } else {
+                                        CalendarSyncManager.skipWorkout(context, missed.eventId)
+                                    }
 
-                            withContext(Dispatchers.Main) {
-                                isResolvingMissed = false
-                                val updated = payload.copy(missedWorkout = null)
-                                payload = updated
-                                LapsRepository.setCachedPayload(updated)
-                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context)
+                                    withContext(Dispatchers.Main) {
+                                        isResolvingMissed = false
+                                        val updated = payload.copy(missedWorkout = null)
+                                        payload = updated
+                                        LapsRepository.setCachedPayload(updated)
+                                        LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context)
 
-                                val msg = if (action == "SHIFT") {
-                                    "Shifted to ${targetDate.ifBlank { "upcoming day" }} in Google Calendar"
-                                } else {
-                                    "Workout marked [SKIPPED] in Google Calendar"
+                                        val msg = if (action == "SHIFT") {
+                                            "Shifted to ${targetDate.ifBlank { "upcoming day" }} in Google Calendar"
+                                        } else {
+                                            "Workout marked [SKIPPED] in Google Calendar"
+                                        }
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
                                 }
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            },
+                            isResolvingMissed = isResolvingMissed,
+                            onSyncClicked = {
+                                isSyncing = true
+                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
+                                    runOnUiThread {
+                                        val (email, pwd) = LapsRepository.getCorosCredentials(context)
+                                        if (email.isBlank() || pwd.isBlank()) {
+                                            LapsRepository.resetSamplePayload()
+                                        }
+                                        payload = LapsRepository.getCachedPayload()
+                                        isSyncing = false
+                                        res.onSuccess {
+                                            Toast.makeText(context, "Synced directly with COROS & Google Calendar", Toast.LENGTH_SHORT).show()
+                                        }.onFailure { err ->
+                                            Toast.makeText(context, "Using local cache: ${err.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            },
+                            onPlanClicked = {
+                                initialPlanHubTab = 0
+                                currentScreen = AppScreen.PLAN_RACE_HUB
+                            },
+                            onWorkoutClicked = {
+                                initialPlanHubTab = 0
+                                currentScreen = AppScreen.PLAN_RACE_HUB
+                            },
+                            onRaceClicked = {
+                                initialPlanHubTab = 1
+                                currentScreen = AppScreen.PLAN_RACE_HUB
+                            },
+                            onSettingsClicked = { currentScreen = AppScreen.SETTINGS },
+                            onConnectAccountClicked = { currentScreen = AppScreen.SETTINGS },
+                            onPinWidget = { item ->
+                                LapsRepository.setStyleForTile(context, item.slot, item.styleIndex)
+                                LapsWidgetUpdateHelper.renderAllFromCache(context)
+                                pinWidgetToLauncher(item)
                             }
-                        }
-                    },
-                    isResolvingMissed = isResolvingMissed,
-                    onSyncClicked = {
-                        isSyncing = true
-                        LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
-                            runOnUiThread {
-                                val (email, pwd) = LapsRepository.getCorosCredentials(context)
-                                if (email.isBlank() || pwd.isBlank()) {
-                                    LapsRepository.resetSamplePayload()
+                        )
+
+                        if (showOnboarding) {
+                            LapsOnboardingDialog(
+                                onDismiss = { showOnboarding = false },
+                                onConnected = {
+                                    showOnboarding = false
+                                    isSyncing = true
+                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
+                                        runOnUiThread {
+                                            payload = LapsRepository.getCachedPayload()
+                                            isSyncing = false
+                                        }
+                                    }
                                 }
-                                payload = LapsRepository.getCachedPayload()
-                                isSyncing = false
-                                res.onSuccess {
-                                    Toast.makeText(context, "Synced directly with COROS & Google Calendar", Toast.LENGTH_SHORT).show()
-                                }.onFailure { err ->
-                                    Toast.makeText(context, "Using local cache: ${err.message}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
+                            )
                         }
-                    },
-                    onPlanClicked = { showPlanDialog = true },
-                    onSettingsClicked = { showSettingsDialog = true },
-                    onConnectAccountClicked = { showSettingsDialog = true },
-                    onPinWidget = { item ->
-                        LapsRepository.setStyleForTile(context, item.slot, item.styleIndex)
-                        LapsWidgetUpdateHelper.renderAllFromCache(context)
-                        pinWidgetToLauncher(item)
+
+                        selectedRunForDetail?.let { run ->
+                            RunDetailModalBottomSheet(
+                                run = run,
+                                onDismiss = { selectedRunForDetail = null }
+                            )
+                        }
                     }
-                )
-
-                if (showOnboarding) {
-                    LapsOnboardingDialog(
-                        onDismiss = { showOnboarding = false },
-                        onConnected = {
-                            showOnboarding = false
-                            isSyncing = true
-                            LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
-                                runOnUiThread {
-                                    payload = LapsRepository.getCachedPayload()
-                                    isSyncing = false
+                    AppScreen.SETTINGS -> {
+                        LapsSettingsScreen(
+                            onNavigateBack = { currentScreen = AppScreen.MAIN },
+                            onSaved = {
+                                currentScreen = AppScreen.MAIN
+                                isSyncing = true
+                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
+                                    runOnUiThread {
+                                        payload = LapsRepository.getCachedPayload()
+                                        isSyncing = false
+                                        res.onSuccess {
+                                            Toast.makeText(context, "Logged in & Synced directly with COROS!", Toast.LENGTH_SHORT).show()
+                                        }.onFailure { err ->
+                                            Toast.makeText(context, "Sync note: ${err.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
                                 }
+                            },
+                            onOpenPlanHub = {
+                                initialPlanHubTab = 2
+                                currentScreen = AppScreen.PLAN_RACE_HUB
                             }
-                        }
-                    )
-                }
-
-                selectedRunForDetail?.let { run ->
-                    RunDetailModalBottomSheet(
-                        run = run,
-                        onDismiss = { selectedRunForDetail = null }
-                    )
-                }
-
-                if (showSettingsDialog) {
-                    LapsSettingsDialog(
-                        onDismiss = { showSettingsDialog = false },
-                        onSaved = {
-                            showSettingsDialog = false
-                            isSyncing = true
-                            LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
-                                runOnUiThread {
-                                    payload = LapsRepository.getCachedPayload()
-                                    isSyncing = false
-                                    res.onSuccess {
-                                        Toast.makeText(context, "Logged in & Synced directly with COROS!", Toast.LENGTH_SHORT).show()
-                                    }.onFailure { err ->
-                                        Toast.makeText(context, "Sync note: ${err.message}", Toast.LENGTH_LONG).show()
+                        )
+                    }
+                    AppScreen.PLAN_RACE_HUB -> {
+                        PlanRaceHubScreen(
+                            payload = payload,
+                            initialTab = initialPlanHubTab,
+                            onNavigateBack = { currentScreen = AppScreen.MAIN },
+                            onOpenSettings = { currentScreen = AppScreen.SETTINGS },
+                            onPlanPublished = {
+                                isSyncing = true
+                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
+                                    runOnUiThread {
+                                        payload = LapsRepository.getCachedPayload()
+                                        isSyncing = false
                                     }
                                 }
                             }
-                        }
-                    )
-                }
-
-                if (showPlanDialog) {
-                    PlanGeneratorDialog(
-                        onDismiss = { showPlanDialog = false },
-                        onOpenSettings = {
-                            showPlanDialog = false
-                            showSettingsDialog = true
-                        },
-                        onPlanPublished = {
-                            showPlanDialog = false
-                            isSyncing = true
-                            LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
-                                runOnUiThread {
-                                    payload = LapsRepository.getCachedPayload()
-                                    isSyncing = false
-                                }
-                            }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -349,6 +375,8 @@ private fun MainAppScaffold(
     isResolvingMissed: Boolean = false,
     onSyncClicked: () -> Unit,
     onPlanClicked: () -> Unit,
+    onWorkoutClicked: () -> Unit = onPlanClicked,
+    onRaceClicked: () -> Unit = onPlanClicked,
     onSettingsClicked: () -> Unit,
     onConnectAccountClicked: () -> Unit = onSettingsClicked,
     onPinWidget: (MainActivity.WidgetCatalogItem) -> Unit
@@ -455,6 +483,8 @@ private fun MainAppScaffold(
                 isResolvingMissed = isResolvingMissed,
                 onConnectAccountClicked = onConnectAccountClicked,
                 onPlanClicked = onPlanClicked,
+                onWorkoutClicked = onWorkoutClicked,
+                onRaceClicked = onRaceClicked,
                 onBrowseWidgetsClicked = { onSectionSelected(1) }
             )
         } else {
@@ -480,6 +510,8 @@ private fun TrainingHubSection(
     isResolvingMissed: Boolean = false,
     onConnectAccountClicked: () -> Unit = {},
     onPlanClicked: () -> Unit = {},
+    onWorkoutClicked: () -> Unit = onPlanClicked,
+    onRaceClicked: () -> Unit = onPlanClicked,
     onBrowseWidgetsClicked: () -> Unit = {}
 ) {
     val runs = payload.recentRuns.ifEmpty { listOf(payload.lastRun) }
@@ -553,7 +585,12 @@ private fun TrainingHubSection(
 
         // 1. Athlete Overview & Next Workout Card
         item {
-            AthleteSummaryHeroCard(payload = payload, isSyncing = isSyncing)
+            AthleteSummaryHeroCard(
+                payload = payload,
+                isSyncing = isSyncing,
+                onWorkoutClicked = onWorkoutClicked,
+                onRaceClicked = onRaceClicked
+            )
         }
 
         // 2. Weekly Mileage Bar & 7-Day M-S Schedule Card
@@ -1659,7 +1696,12 @@ private fun MissedWorkoutCoachCard(
 }
 
 @Composable
-private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
+private fun AthleteSummaryHeroCard(
+    payload: LapsPayload,
+    isSyncing: Boolean,
+    onWorkoutClicked: (() -> Unit)? = null,
+    onRaceClicked: (() -> Unit)? = null
+) {
     val wm = payload.weeklyMileage
     val tl = payload.trainingLoad
     val rc = payload.raceCountdown
@@ -1773,7 +1815,10 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
 
             // Next Workout Strip / COROS Metrics Live Sync Strip
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .clickable(enabled = onWorkoutClicked != null) { onWorkoutClicked?.invoke() },
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
@@ -1863,7 +1908,10 @@ private fun AthleteSummaryHeroCard(payload: LapsPayload, isSyncing: Boolean) {
             if (payload.activePlan != null || rc.daysLeft > 0) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable(enabled = onRaceClicked != null) { onRaceClicked?.invoke() },
                     shape = RoundedCornerShape(20.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
@@ -2555,412 +2603,471 @@ private fun LapsOnboardingDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LapsSettingsDialog(
-    onDismiss: () -> Unit,
-    onSaved: () -> Unit
+private fun LapsSettingsScreen(
+    onNavigateBack: () -> Unit,
+    onSaved: () -> Unit,
+    onOpenPlanHub: () -> Unit
 ) {
     val context = LocalContext.current
     val (savedEmail, savedPassword) = remember { LapsRepository.getCorosCredentials(context) }
     val savedToken = remember { LapsRepository.getCorosToken(context) }
     val savedCalId = remember { LapsRepository.getSelectedCalendarId(context) }
     val savedGemini = remember { LapsRepository.getGeminiKey(context) }
+    val activePlan = remember { LapsRepository.getActivePlan(context) }
 
     var token by remember { mutableStateOf(savedToken) }
     var email by remember { mutableStateOf(savedEmail) }
     var password by remember { mutableStateOf(savedPassword) }
+    var showPassword by remember { mutableStateOf(false) }
     var geminiKey by remember { mutableStateOf(savedGemini) }
     var selectedCalendarId by remember { mutableLongStateOf(savedCalId) }
     var isOAuthMode by remember { mutableStateOf(savedToken.isNotBlank() || (savedEmail.isBlank() && savedPassword.isBlank())) }
 
     var calendars by remember { mutableStateOf(CalendarSyncManager.getAvailableCalendars(context)) }
     var calendarExpanded by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Laps Settings",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = rememberShieldVector(),
-                                    contentDescription = "Privacy Shield",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text("Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = rememberArrowBackVector(),
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                },
+                actions = {
+                    Button(
+                        onClick = {
+                            if (isOAuthMode) {
+                                LapsRepository.saveCorosToken(context, token)
+                            } else {
+                                LapsRepository.saveCorosCredentials(context, email, password)
                             }
-                        }
-                        Column {
-                            Text(
-                                text = "Zero Cloud • On-Device Sandboxing",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "Tokens and credentials reside strictly in private Android app sandboxing. For password-free security, connect via COROS OAuth 2.0 / MCP.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                // Auth Method Tabs
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilledTonalButton(
-                        onClick = { isOAuthMode = false },
-                        modifier = Modifier.weight(1f),
+                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                            LapsRepository.saveGeminiKey(context, geminiKey)
+                            LapsRepository.setSetupCompleted(context, true)
+                            onSaved()
+                        },
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (!isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = if (!isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                        )
+                        modifier = Modifier.padding(end = 8.dp)
                     ) {
-                        Text("Direct Login", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Text("Save & Sync", fontWeight = FontWeight.Bold)
                     }
-                    FilledTonalButton(
-                        onClick = { isOAuthMode = true },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Text("MCP Token", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                if (isOAuthMode) {
-                    Text(
-                        text = "COROS MCP Bearer Token (Advanced)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Paste your Bearer token from COROS Model Context Protocol (mcp.coros.com).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = token,
-                        onValueChange = { token = it },
-                        label = { Text("COROS MCP Bearer Token") },
-                        placeholder = { Text("Bearer eyJhbGci...") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                } else {
-                    Text(
-                        text = "Direct COROS Training Hub Login",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Direct HTTPS authentication with teamapi.coros.com on-device. Stored securely in private app storage.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = { Text("COROS Email") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("COROS Password") },
-                        singleLine = true,
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Privacy Shield
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = rememberShieldVector(),
+                                contentDescription = "Privacy Shield",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Google Calendar (Optional)",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
+                            text = "Zero Cloud • On-Device Sandboxing",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Only needed for scheduled workouts. Choose 'None (Metrics Only)' if you just want widgets.",
+                            text = "Your COROS login, workouts, and biometrics stay strictly on this device. No intermediate servers or analytics.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(
-                        onClick = {
-                            CalendarSyncManager.requestSync(context)
-                            calendars = CalendarSyncManager.getAvailableCalendars(context)
-                            Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = rememberRefreshVector(),
-                            contentDescription = "Refresh Calendars",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+            }
 
-                val selectedCal = calendars.find { it.id == selectedCalendarId }
-                val selectedCalLabel = when {
-                    selectedCalendarId == -1L -> "None (Metrics Only — Widgets & Live Sync)"
-                    selectedCal != null -> "${selectedCal.displayName} (${selectedCal.accountName})"
-                    else -> "None (Metrics Only — Widgets & Live Sync)"
-                }
+            // COROS Account Card
+            OutlinedCard(
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "COROS ACCOUNT INTEGRATION",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Connect directly with COROS Training Hub for physiological metrics, acute load, and threshold pace.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedCard(
-                        onClick = {
-                            calendars = CalendarSyncManager.getAvailableCalendars(context)
-                            calendarExpanded = true
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        FilledTonalButton(
+                            onClick = { isOAuthMode = false },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (!isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = if (!isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                            )
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Training Calendar",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    text = selectedCalLabel,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Icon(
-                                imageVector = rememberArrowDownVector(),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
+                            Text("Direct Login", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        }
+                        FilledTonalButton(
+                            onClick = { isOAuthMode = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                             )
+                        ) {
+                            Text("MCP Token", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                         }
                     }
-                    DropdownMenu(
-                        expanded = calendarExpanded,
-                        onDismissRequest = { calendarExpanded = false },
-                        modifier = Modifier
-                            .heightIn(max = 280.dp)
-                            .widthIn(max = 320.dp)
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    Text(
-                                        text = "None (Metrics Only — Widgets & Live Sync)",
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "No training plan. Connect purely for COROS metrics widgets.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            },
-                            onClick = {
-                                selectedCalendarId = -1L
-                                calendarExpanded = false
-                            }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    if (isOAuthMode) {
+                        OutlinedTextField(
+                            value = token,
+                            onValueChange = { token = it },
+                            label = { Text("COROS MCP Bearer Token") },
+                            placeholder = { Text("Bearer eyJhbGci...") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
                         )
-                        calendars.forEach { cal ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text(
-                                            text = cal.displayName,
-                                            fontWeight = FontWeight.Medium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = cal.accountName,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    selectedCalendarId = cal.id
-                                    calendarExpanded = false
-                                }
-                            )
-                        }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = rememberRefreshVector(),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Refresh Calendars from Device",
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "Pulls newly created Google or local calendars",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
+                    } else {
+                        OutlinedTextField(
+                            value = email,
+                            onValueChange = { email = it },
+                            label = { Text("COROS Email") },
+                            placeholder = { Text("athlete@example.com") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("COROS Password") },
+                            singleLine = true,
+                            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                TextButton(onClick = { showPassword = !showPassword }) {
+                                    Text(if (showPassword) "Hide" else "Show", style = MaterialTheme.typography.labelSmall)
                                 }
                             },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            // Google Calendar Card
+            OutlinedCard(
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "GOOGLE CALENDAR SYNC",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(
                             onClick = {
                                 CalendarSyncManager.requestSync(context)
                                 calendars = CalendarSyncManager.getAvailableCalendars(context)
                                 Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
                             }
-                        )
+                        ) {
+                            Icon(
+                                imageVector = rememberRefreshVector(),
+                                contentDescription = "Refresh Calendars",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
-                }
+                    Text(
+                        text = "Workouts generated by Laps publish directly to your Android device calendar for watch and phone sync.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                Spacer(modifier = Modifier.height(20.dp))
-                Text(
-                    text = "Gemini AI Coach (Optional)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Optional Gemini 1.5 Pro / Flash API key for deep physiological recovery guidance. If empty, local EvoLab heuristics are used.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = geminiKey,
-                    onValueChange = { geminiKey = it },
-                    label = { Text("Gemini API Key (Optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    val selectedCal = calendars.find { it.id == selectedCalendarId }
+                    val selectedCalLabel = when {
+                        selectedCalendarId == -1L -> "None (Metrics Only — Widgets & Live Sync)"
+                        selectedCal != null -> "${selectedCal.displayName} (${selectedCal.accountName})"
+                        else -> "None (Metrics Only — Widgets & Live Sync)"
+                    }
 
-                if (LapsRepository.hasCredentials(context)) {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    OutlinedButton(
-                        onClick = {
-                            LapsRepository.clearAllCredentials(context)
-                            onSaved()
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Sign Out & Reset to Sample Data")
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedCard(
+                            onClick = {
+                                calendars = CalendarSyncManager.getAvailableCalendars(context)
+                                calendarExpanded = true
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Target Calendar",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = selectedCalLabel,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Icon(
+                                    imageVector = rememberArrowDownVector(),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = calendarExpanded,
+                            onDismissRequest = { calendarExpanded = false },
+                            modifier = Modifier.heightIn(max = 280.dp).widthIn(max = 320.dp)
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("None (Metrics Only)", fontWeight = FontWeight.SemiBold)
+                                        Text("No calendar sync. Widget metrics only.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = {
+                                    selectedCalendarId = -1L
+                                    calendarExpanded = false
+                                }
+                            )
+                            calendars.forEach { cal ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(cal.displayName, fontWeight = FontWeight.Medium)
+                                            Text(cal.accountName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedCalendarId = cal.id
+                                        calendarExpanded = false
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (isOAuthMode) {
-                        LapsRepository.saveCorosToken(context, token)
-                    } else {
-                        LapsRepository.saveCorosCredentials(context, email, password)
-                    }
-                    LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
-                    LapsRepository.saveGeminiKey(context, geminiKey)
-                    LapsRepository.setSetupCompleted(context, true)
-                    onSaved()
-                }
+
+            // Active Training Plan Card
+            OutlinedCard(
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Save & Sync")
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "ACTIVE TRAINING PLAN",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (activePlan != null) {
+                        val planName = if (activePlan.customRaceName.isNotBlank()) activePlan.customRaceName else activePlan.distanceLabel
+                        Text(
+                            text = "$planName (${activePlan.planWeeks}w · ${activePlan.distanceLabel})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilledTonalButton(
+                                onClick = onOpenPlanHub,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Manage in Hub")
+                            }
+                            FilledTonalButton(
+                                onClick = {
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        if (selectedCalendarId > 0L) {
+                                            CalendarSyncManager.clearPlanEvents(context, selectedCalendarId)
+                                        }
+                                        LapsRepository.clearActivePlan(context)
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "Plan cleared (Metrics-Only mode)", Toast.LENGTH_SHORT).show()
+                                            onSaved()
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Clear Plan")
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "No active training plan. App is operating in Metrics-Only mode.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        FilledTonalButton(
+                            onClick = onOpenPlanHub,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Build Training Plan")
+                        }
+                    }
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+
+            // Gemini AI Coach Card (Optional)
+            OutlinedCard(
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "GEMINI AI COACH (OPTIONAL)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Optional Gemini 1.5 Pro / Flash API key for deep physiological recovery guidance. If empty, local EvoLab heuristics are used.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = geminiKey,
+                        onValueChange = { geminiKey = it },
+                        label = { Text("Gemini API Key") },
+                        placeholder = { Text("AIzaSy...") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
+
+            // Sign Out & Reset
+            if (LapsRepository.hasCredentials(context)) {
+                OutlinedButton(
+                    onClick = {
+                        LapsRepository.clearAllCredentials(context)
+                        onSaved()
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Sign Out & Reset to Sample Data")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
         }
-    )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PlanGeneratorDialog(
-    onDismiss: () -> Unit,
-    onOpenSettings: () -> Unit = {},
+private fun PlanRaceHubScreen(
+    payload: LapsPayload,
+    initialTab: Int = 0,
+    onNavigateBack: () -> Unit,
+    onOpenSettings: () -> Unit,
     onPlanPublished: () -> Unit
 ) {
     val context = LocalContext.current
-    val activePlan = remember { LapsRepository.getActivePlan(context) }
-    var customRaceName by remember { mutableStateOf(activePlan?.customRaceName ?: "") }
+    val activePlan = payload.activePlan
+    val rc = payload.raceCountdown
+    val nw = payload.nextWorkout
+
+    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
+
+    // Customizer / Plan Generator State
     var selectedDistance by remember {
         mutableStateOf(
             PlanGenerator.RaceDistance.entries.find { it.label.equals(activePlan?.distanceLabel, ignoreCase = true) }
@@ -2968,6 +3075,7 @@ private fun PlanGeneratorDialog(
         )
     }
     var planWeeks by remember { mutableIntStateOf(activePlan?.planWeeks ?: 10) }
+    var customRaceName by remember { mutableStateOf(activePlan?.customRaceName ?: "") }
     var clearPreviousWorkouts by remember { mutableStateOf(true) }
     var isPublishing by remember { mutableStateOf(false) }
 
@@ -2975,394 +3083,889 @@ private fun PlanGeneratorDialog(
     val hasCalendar = selectedCalId > 0L
     val coroutineScope = rememberCoroutineScope()
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = if (activePlan != null) "Switch / Edit Training Plan" else "Training Plan Generator",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+    // Generate in-memory multi-week workouts for display
+    val workoutsByWeek = remember(activePlan) {
+        if (activePlan == null) {
+            emptyMap<Int, List<PlanGenerator.PlanWorkoutItem>>()
+        } else {
+            val distEnum = PlanGenerator.RaceDistance.entries.find { it.label.equals(activePlan.distanceLabel, ignoreCase = true) }
+                ?: PlanGenerator.RaceDistance.HALF_MARATHON
+            val all = PlanGenerator.generatePlan(
+                calendarId = -1L,
+                raceDistance = distEnum,
+                startDateMillis = activePlan.startDateMillis,
+                planWeeks = activePlan.planWeeks,
+                customRaceName = activePlan.customRaceName
             )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                if (activePlan != null) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "CURRENT ACTIVE PLAN",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    val currentPlanTitle = if (activePlan.customRaceName.isNotBlank()) {
-                                        "${activePlan.customRaceName} (${activePlan.planWeeks}w · ${activePlan.distanceLabel})"
-                                    } else {
-                                        "${activePlan.planWeeks}-Week ${activePlan.distanceLabel}"
-                                    }
-                                    Text(
-                                        text = currentPlanTitle,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                FilledTonalButton(
-                                    onClick = {
-                                        coroutineScope.launch(Dispatchers.IO) {
-                                            if (hasCalendar) {
-                                                CalendarSyncManager.clearPlanEvents(context, selectedCalId)
-                                            }
-                                            LapsRepository.clearActivePlan(context)
-                                            withContext(Dispatchers.Main) {
-                                                Toast.makeText(context, "Plan cleared (Metrics-Only mode)", Toast.LENGTH_SHORT).show()
-                                                onPlanPublished()
-                                            }
-                                        }
-                                    },
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                    ),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Clear Plan", style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Select a new distance or duration below to switch plans cleanly.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-                if (!hasCalendar) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = "No Google Calendar Selected",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "You are currently in Metrics-Only mode. To publish workouts to your device, select a Google Calendar in Settings first.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            FilledTonalButton(
-                                onClick = onOpenSettings,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Select Calendar in Settings", style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                    }
-                }
+            all.groupBy { (it.dayOffset / 7) + 1 }
+        }
+    }
 
-                Text(
-                    text = "Build a scientifically periodized 80/20 plan tailored to your COROS threshold pace & heart rate zones, published directly to your Google Calendar.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(16.dp))
+    val defaultExpanded = if (rc.currentWeek > 0) rc.currentWeek else 1
+    var expandedWeeks by remember(activePlan) { mutableStateOf(setOf(defaultExpanded)) }
 
-                Text(
-                    text = "Race / Event Name (Optional)",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = customRaceName,
-                    onValueChange = { customRaceName = it },
-                    placeholder = { Text("e.g. Hyderabad HM, Mumbai Marathon") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(16.dp))
+    val pageTitle = if (activePlan != null && activePlan.customRaceName.isNotBlank()) {
+        activePlan.customRaceName
+    } else if (activePlan != null) {
+        "${activePlan.distanceLabel} Plan"
+    } else {
+        "Training Plan & Race Hub"
+    }
 
-                Text(
-                    text = "Target Distance",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    PlanGenerator.RaceDistance.entries.forEach { dist ->
-                        FilterChip(
-                            selected = selectedDistance == dist,
-                            onClick = { selectedDistance = dist },
-                            label = {
-                                Text(
-                                    text = dist.label,
-                                    fontSize = 13.sp,
-                                    maxLines = 1,
-                                    fontWeight = if (selectedDistance == dist) FontWeight.SemiBold else FontWeight.Normal
-                                )
-                            }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                val startMonday = remember { PlanGenerator.getUpcomingMonday() }
-                val raceSunday = remember(planWeeks) {
-                    (startMonday.clone() as Calendar).apply {
-                        add(Calendar.DAY_OF_YEAR, (planWeeks - 1) * 7 + 6)
-                    }
-                }
-                val daysToRace = remember(raceSunday) {
-                    val nowCal = Calendar.getInstance().apply {
-                        set(Calendar.HOUR_OF_DAY, 0)
-                        set(Calendar.MINUTE, 0)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
-                    }
-                    val rCal = (raceSunday.clone() as Calendar).apply {
-                        set(Calendar.HOUR_OF_DAY, 0)
-                        set(Calendar.MINUTE, 0)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
-                    }
-                    ((rCal.timeInMillis - nowCal.timeInMillis) / 86400000L).toInt().coerceAtLeast(0)
-                }
-                val sdfDate = remember { SimpleDateFormat("EEE, MMM d, yyyy", Locale.US) }
-                val sdfShort = remember { SimpleDateFormat("EEE, MMM d", Locale.US) }
-
-                Text(
-                    text = "Plan Duration: $planWeeks Weeks",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(6, 8, 10, 12, 16).forEach { weeks ->
-                        FilterChip(
-                            selected = planWeeks == weeks,
-                            onClick = { planWeeks = weeks },
-                            label = {
-                                Text(
-                                    text = "${weeks}w",
-                                    fontSize = 13.sp,
-                                    maxLines = 1,
-                                    fontWeight = if (planWeeks == weeks) FontWeight.SemiBold else FontWeight.Normal
-                                )
-                            }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Prominent Target Race Day Highlight Card
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = if (customRaceName.isNotBlank()) "🏁 ${customRaceName.trim().uppercase()}" else "🏁 TARGET RACE DAY",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = sdfDate.format(raceSunday.time),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary
-                        ) {
-                            Text(
-                                text = "$daysToRace days away",
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = "Plan Schedule & Structure",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "• Starts: ${sdfShort.format(startMonday.time)} (Upcoming Monday)\n• 4 runs/week (Tue Threshold, Wed Easy, Fri Strides, Sun Long Run)\n• Progressive overload tailored to ${selectedDistance.label} with taper\n• Auto-calculates paces using your COROS EvoLab profile",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Reassuring Clean Calendar Option
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { clearPreviousWorkouts = !clearPreviousWorkouts }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = clearPreviousWorkouts,
-                        onCheckedChange = { clearPreviousWorkouts = it }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = pageTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Column {
-                        Text(
-                            text = "Clean up previous Laps plan workouts",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Removes old plan events from calendar to avoid duplicates",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = rememberArrowBackVector(),
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (!hasCalendar) {
-                        Toast.makeText(context, "Cannot publish: No Google Calendar selected", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    isPublishing = true
-                    coroutineScope.launch(Dispatchers.IO) {
-                        if (clearPreviousWorkouts) {
-                            CalendarSyncManager.clearPlanEvents(context, selectedCalId)
-                        }
-                        val startCal = PlanGenerator.getUpcomingMonday()
-                        val raceSunday = (startCal.clone() as Calendar).apply {
-                            add(Calendar.DAY_OF_YEAR, (planWeeks - 1) * 7 + 6)
-                        }
-                        val trimmedCustomRaceName = customRaceName.trim()
-                        PlanGenerator.generatePlan(
-                            context = context,
-                            calendarId = selectedCalId,
-                            raceDistance = selectedDistance,
-                            startDateMillis = startCal.timeInMillis,
-                            planWeeks = planWeeks,
-                            skipPastEvents = true,
-                            customRaceName = trimmedCustomRaceName
-                        )
-                        LapsRepository.saveActivePlan(
-                            context,
-                            ActivePlanInfo(
-                                distanceLabel = selectedDistance.label,
-                                planWeeks = planWeeks,
-                                startDateMillis = startCal.timeInMillis,
-                                raceDateMillis = raceSunday.timeInMillis,
-                                calendarId = selectedCalId,
-                                customRaceName = trimmedCustomRaceName
-                            )
-                        )
-                        withContext(Dispatchers.Main) {
-                            isPublishing = false
-                            val planDisplayName = if (trimmedCustomRaceName.isNotBlank()) trimmedCustomRaceName else selectedDistance.label
-                            Toast.makeText(
-                                context,
-                                "Published $planWeeks-week $planDisplayName plan starting ${SimpleDateFormat("MMM d", Locale.US).format(startCal.time)}!",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            onPlanPublished()
+                },
+                actions = {
+                    if (selectedTab != 2) {
+                        FilledTonalButton(
+                            onClick = { selectedTab = 2 },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text(if (activePlan != null) "Edit Plan" else "Build Plan")
                         }
                     }
                 },
-                enabled = !isPublishing && hasCalendar
-            ) {
-                if (isPublishing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    Text(if (hasCalendar) (if (activePlan != null) "Switch / Update Plan" else "Publish to Calendar") else "No Calendar Selected")
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            // Tabs
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("Schedule", maxLines = 1, fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("Race Strategy", maxLines = 1, fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text("Customizer", maxLines = 1, fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal) }
+                )
+            }
+
+            when (selectedTab) {
+                0 -> {
+                    // Schedule Tab (Multi-Week Collapsible Accordion + Next Workout)
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        if (activePlan == null) {
+                            item {
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(20.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = "No Active Training Plan",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = "You are currently in Metrics-Only mode. Tap 'Build 80/20 Plan' to create a periodized plan tailored to your COROS EvoLab profile.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(
+                                            onClick = { selectedTab = 2 },
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Text("Build 80/20 Plan")
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Hero: Next Scheduled Workout
+                            item {
+                                Surface(
+                                    shape = RoundedCornerShape(24.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(18.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "NEXT SCHEDULED WORKOUT · ${nw.dayBadge.uppercase(Locale.US)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Surface(
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = MaterialTheme.colorScheme.primaryContainer
+                                            ) {
+                                                Text(
+                                                    text = if (nw.targetDistanceKm > 0) "${nw.targetDistanceKm.toInt()} km" else "Planned",
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = nw.title,
+                                            style = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Target: ${nw.targetPace}  ·  HR Zone: ${nw.targetHrZone}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Section header
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${activePlan.planWeeks}-WEEK CALENDAR SCHEDULE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "Tap week to expand",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            // Multi-week Collapsible Weeks
+                            items(activePlan.planWeeks) { index ->
+                                val week = index + 1
+                                val isExpanded = expandedWeeks.contains(week)
+                                val weekWorkouts = workoutsByWeek[week] ?: emptyList()
+                                val weekTotalKm = weekWorkouts.sumOf { it.targetDistanceKm }
+                                val isCurrentWeek = week == rc.currentWeek
+                                val isRaceWeek = week == activePlan.planWeeks
+                                val isPeakWeek = week == (activePlan.planWeeks * 0.7).toInt()
+                                val isTaperWeek = week == activePlan.planWeeks - 1
+
+                                val weekTag = when {
+                                    isRaceWeek -> "🏁 RACE WEEK"
+                                    isTaperWeek -> "TAPER"
+                                    isPeakWeek -> "PEAK VOLUME"
+                                    isCurrentWeek -> "CURRENT"
+                                    else -> "BUILD"
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = if (isCurrentWeek) {
+                                        MaterialTheme.colorScheme.surfaceContainerHigh
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerLow
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .clickable {
+                                            expandedWeeks = if (isExpanded) {
+                                                expandedWeeks - week
+                                            } else {
+                                                expandedWeeks + week
+                                            }
+                                        }
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Surface(
+                                                    shape = CircleShape,
+                                                    color = if (isCurrentWeek || isRaceWeek) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest
+                                                ) {
+                                                    Text(
+                                                        text = "W$week",
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isCurrentWeek || isRaceWeek) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(10.dp))
+                                                Column {
+                                                    Text(
+                                                        text = "Week $week of ${activePlan.planWeeks}",
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = "${String.format(Locale.US, "%.1f", weekTotalKm)} km planned · 4 runs",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Surface(
+                                                    shape = CircleShape,
+                                                    color = when {
+                                                        isRaceWeek -> MaterialTheme.colorScheme.primary
+                                                        isCurrentWeek -> MaterialTheme.colorScheme.secondaryContainer
+                                                        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        text = weekTag,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = when {
+                                                            isRaceWeek -> MaterialTheme.colorScheme.onPrimary
+                                                            isCurrentWeek -> MaterialTheme.colorScheme.onSecondaryContainer
+                                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                        }
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Icon(
+                                                    imageVector = if (isExpanded) rememberArrowUpVector() else rememberArrowDownVector(),
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+
+                                        // Expanded Workout Rows
+                                        if (isExpanded) {
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                for (workout in weekWorkouts) {
+                                                    val isRaceEvent = workout.workoutType.equals("Race", ignoreCase = true)
+                                                    Surface(
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        color = if (isRaceEvent) {
+                                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                                        } else {
+                                                            MaterialTheme.colorScheme.surfaceContainerHighest
+                                                        },
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(12.dp),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text(
+                                                                    text = workout.title,
+                                                                    style = MaterialTheme.typography.titleSmall,
+                                                                    fontWeight = FontWeight.SemiBold,
+                                                                    color = MaterialTheme.colorScheme.onSurface
+                                                                )
+                                                                if (workout.description.isNotBlank()) {
+                                                                    Text(
+                                                                        text = workout.description,
+                                                                        style = MaterialTheme.typography.bodySmall,
+                                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                        maxLines = 2,
+                                                                        overflow = TextOverflow.Ellipsis
+                                                                    )
+                                                                }
+                                                            }
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Surface(
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                color = if (isRaceEvent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer
+                                                            ) {
+                                                                Text(
+                                                                    text = "${workout.targetDistanceKm.toInt()} km",
+                                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = if (isRaceEvent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                1 -> {
+                    // Race Strategy & Readiness Tab
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Countdown Hero
+                        Surface(
+                            shape = RoundedCornerShape(24.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text(
+                                    text = "TARGET RACE ROADMAP",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = rc.raceName,
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Target Date: ${rc.raceDate}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Column(modifier = Modifier.padding(14.dp)) {
+                                            Text(
+                                                text = "DAYS LEFT",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = "${rc.daysLeft}",
+                                                style = MaterialTheme.typography.headlineSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = if (rc.currentWeek > 0) "Week ${rc.currentWeek} of ${rc.totalWeeks}" else "Starts next week",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Column(modifier = Modifier.padding(14.dp)) {
+                                            Text(
+                                                text = "READINESS",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.secondary
+                                            )
+                                            Text(
+                                                text = rc.readinessTag,
+                                                style = MaterialTheme.typography.headlineSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 18.sp
+                                            )
+                                            Text(
+                                                text = "COROS EvoLab Status",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Pace & Fitness Matrix
+                        OutlinedCard(
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "TARGET PACE VS CURRENT FITNESS",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text("Goal Finish Time", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(rc.goalTime, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text("Goal Target Pace", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(rc.goalPace, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                HorizontalDivider()
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text("Current Threshold Pace", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(rc.currentLtsp, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text("Lactate Threshold HR", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("${rc.currentLthr} bpm", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Periodization Macrocycle Roadmap
+                        OutlinedCard(
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "PERIODIZATION MACROCYCLE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Current: ${rc.phase}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                listOf(
+                                    "Phase 1 · Aerobic Base Foundation" to "Builds mitochondrial density, capillary network, and joint durability at Zone 2.",
+                                    "Phase 2 · Threshold & Tempo Overload" to "Raises lactate clearing ceiling and locks in race-specific cruising speed.",
+                                    "Phase 3 · Peak Volume" to "Longest long runs (up to 18-32 km) with target-pace progression blocks.",
+                                    "Phase 4 · Taper & Race Readiness" to "Volume reduction by 40-55% while maintaining cadence and sharpening legs."
+                                ).forEach { (pTitle, pDesc) ->
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text(text = pTitle, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                            Text(text = pDesc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Race Day Strategy & Fueling
+                        OutlinedCard(
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "RACE DAY FUELING & EXECUTION STRATEGY",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "• Fueling Cadence: Ingest an isotonic energy gel every 40-45 minutes with 150ml water.\n• Controlled First 5K: Run 5-8 seconds per km slower than goal pace to preserve glycogen.\n• Cadence Target: Keep cadence steady between 175-182 spm across hills.\n• Negative Split: Surge steadily after 75% distance to pass fatigued runners.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    lineHeight = 20.sp
+                                )
+                            }
+                        }
+                    }
+                }
+                2 -> {
+                    // Customizer / Plan Generator Tab
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        if (!hasCalendar) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text(
+                                        text = "No Google Calendar Selected",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "You are currently in Metrics-Only mode. To publish workouts to your device, select a Google Calendar in Settings.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    FilledTonalButton(
+                                        onClick = onOpenSettings,
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Select Calendar in Settings")
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "Build a scientifically periodized 80/20 plan tailored to your COROS threshold pace & heart rate zones, published directly to your Google Calendar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        // Race / Event Name
+                        OutlinedCard(
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "RACE / EVENT NAME (OPTIONAL)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = customRaceName,
+                                    onValueChange = { customRaceName = it },
+                                    placeholder = { Text("e.g. Hyderabad HM, Mumbai Marathon") },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
+                        // Target Distance
+                        OutlinedCard(
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "TARGET DISTANCE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    PlanGenerator.RaceDistance.entries.forEach { dist ->
+                                        FilterChip(
+                                            selected = selectedDistance == dist,
+                                            onClick = { selectedDistance = dist },
+                                            label = {
+                                                Text(
+                                                    text = dist.label,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = if (selectedDistance == dist) FontWeight.SemiBold else FontWeight.Normal
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Plan Duration
+                        val startMonday = remember { PlanGenerator.getUpcomingMonday() }
+                        val raceSunday = remember(planWeeks) {
+                            (startMonday.clone() as Calendar).apply {
+                                add(Calendar.DAY_OF_YEAR, (planWeeks - 1) * 7 + 6)
+                            }
+                        }
+                        val daysToRace = remember(raceSunday) {
+                            val nowCal = Calendar.getInstance().apply {
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
+                            val rCal = (raceSunday.clone() as Calendar).apply {
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
+                            ((rCal.timeInMillis - nowCal.timeInMillis) / 86400000L).toInt().coerceAtLeast(0)
+                        }
+                        val sdfDate = remember { SimpleDateFormat("EEE, MMM d, yyyy", Locale.US) }
+
+                        OutlinedCard(
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = "PLAN DURATION: $planWeeks WEEKS",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    listOf(6, 8, 10, 12, 16).forEach { weeks ->
+                                        FilterChip(
+                                            selected = planWeeks == weeks,
+                                            onClick = { planWeeks = weeks },
+                                            label = {
+                                                Text(
+                                                    text = "${weeks}w",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = if (planWeeks == weeks) FontWeight.SemiBold else FontWeight.Normal
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Target Race Day Card
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    val rTag = if (customRaceName.isNotBlank()) "🏁 ${customRaceName.trim().uppercase()}" else "🏁 TARGET RACE DAY"
+                                    Text(
+                                        text = rTag,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = sdfDate.format(raceSunday.time),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary
+                                ) {
+                                    Text(
+                                        text = "$daysToRace days away",
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                }
+                            }
+                        }
+
+                        // Clean workouts checkbox
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { clearPreviousWorkouts = !clearPreviousWorkouts }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = clearPreviousWorkouts,
+                                onCheckedChange = { clearPreviousWorkouts = it }
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column {
+                                Text("Clean up previous Laps plan workouts", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                Text("Removes old plan events from calendar to avoid duplicates", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        // Action button
+                        Button(
+                            onClick = {
+                                if (!hasCalendar) {
+                                    Toast.makeText(context, "Cannot publish: No Google Calendar selected", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                isPublishing = true
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    if (clearPreviousWorkouts) {
+                                        CalendarSyncManager.clearPlanEvents(context, selectedCalId)
+                                    }
+                                    val startCal = PlanGenerator.getUpcomingMonday()
+                                    val rSunday = (startCal.clone() as Calendar).apply {
+                                        add(Calendar.DAY_OF_YEAR, (planWeeks - 1) * 7 + 6)
+                                    }
+                                    val trimmedName = customRaceName.trim()
+                                    PlanGenerator.generatePlan(
+                                        context = context,
+                                        calendarId = selectedCalId,
+                                        raceDistance = selectedDistance,
+                                        startDateMillis = startCal.timeInMillis,
+                                        planWeeks = planWeeks,
+                                        skipPastEvents = true,
+                                        customRaceName = trimmedName
+                                    )
+                                    LapsRepository.saveActivePlan(
+                                        context,
+                                        ActivePlanInfo(
+                                            distanceLabel = selectedDistance.label,
+                                            planWeeks = planWeeks,
+                                            startDateMillis = startCal.timeInMillis,
+                                            raceDateMillis = rSunday.timeInMillis,
+                                            calendarId = selectedCalId,
+                                            customRaceName = trimmedName
+                                        )
+                                    )
+                                    withContext(Dispatchers.Main) {
+                                        isPublishing = false
+                                        val displayName = if (trimmedName.isNotBlank()) trimmedName else selectedDistance.label
+                                        Toast.makeText(
+                                            context,
+                                            "Published $planWeeks-week $displayName plan starting ${SimpleDateFormat("MMM d", Locale.US).format(startCal.time)}!",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        selectedTab = 0
+                                        onPlanPublished()
+                                    }
+                                }
+                            },
+                            enabled = !isPublishing && hasCalendar,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                        ) {
+                            if (isPublishing) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text("Publishing to Calendar…")
+                            } else {
+                                Text(if (activePlan != null) "Update & Sync Plan" else "Publish Plan to Calendar", fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (activePlan != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        if (selectedCalId > 0L) {
+                                            CalendarSyncManager.clearPlanEvents(context, selectedCalId)
+                                        }
+                                        LapsRepository.clearActivePlan(context)
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "Plan cleared (Metrics-Only mode)", Toast.LENGTH_SHORT).show()
+                                            onPlanPublished()
+                                            onNavigateBack()
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Clear Plan (Switch to Metrics-Only)")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+                    }
                 }
             }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isPublishing
-            ) {
-                Text("Cancel")
-            }
         }
-    )
+    }
 }
 
 @Composable
@@ -3620,6 +4223,57 @@ private fun rememberArrowDownVector(): ImageVector = remember {
             lineTo(18.0f, 10.0f)
             lineTo(12.0f, 16.0f)
             lineTo(6.0f, 10.0f)
+            close()
+        }
+    }.build()
+}
+
+@Composable
+private fun rememberArrowUpVector(): ImageVector = remember {
+    ImageVector.Builder(
+        name = "ArrowUp",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.White),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(7.41f, 15.41f)
+            lineTo(12.0f, 10.83f)
+            lineTo(16.59f, 15.41f)
+            lineTo(18.0f, 14.0f)
+            lineTo(12.0f, 8.0f)
+            lineTo(6.0f, 14.0f)
+            close()
+        }
+    }.build()
+}
+
+@Composable
+private fun rememberArrowBackVector(): ImageVector = remember {
+    ImageVector.Builder(
+        name = "ArrowBack",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.White),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(20.0f, 11.0f)
+            lineTo(7.83f, 11.0f)
+            lineTo(13.42f, 5.41f)
+            lineTo(12.0f, 4.0f)
+            lineTo(4.0f, 12.0f)
+            lineTo(12.0f, 20.0f)
+            lineTo(13.41f, 18.59f)
+            lineTo(7.83f, 13.0f)
+            lineTo(20.0f, 13.0f)
             close()
         }
     }.build()
