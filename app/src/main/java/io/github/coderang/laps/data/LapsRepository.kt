@@ -633,6 +633,25 @@ object LapsRepository {
                 raceTargetCal.timeInMillis >= todayCal.timeInMillis
             }
 
+            val cleanRaceTitle = raceEvent?.title
+                ?.replace("🏁 RACE DAY: ", "")
+                ?.replace("🏁 RACE DAY:", "")
+                ?.replace("🏁 ", "")
+                ?.trim()
+                ?.ifBlank { "RACE DAY" } ?: "RACE DAY"
+
+            val maxWeekInCal = gcalPlannedList.mapNotNull {
+                Regex("W(\\d+)").find(it.title)?.groupValues?.get(1)?.toIntOrNull()
+            }.maxOrNull() ?: 10
+            val totalWeeks = if (maxWeekInCal > 0) maxWeekInCal else 10
+
+            var currentWeek = 0
+            val thisWeekWorkout = gcalPlannedList.firstOrNull { it.startMillis in mondayMillis..sundayMillis }
+            val weekMatch = if (thisWeekWorkout != null) Regex("W(\\d+)").find(thisWeekWorkout.title) else null
+            if (weekMatch != null) {
+                currentWeek = weekMatch.groupValues[1].toIntOrNull() ?: 0
+            }
+
             val rcData = if (isCorosPlanFuture && corosSchedule != null) {
                 val endDay = corosSchedule.endDayInt
                 val endY = endDay / 10000
@@ -766,24 +785,7 @@ object LapsRepository {
                     set(Calendar.MILLISECOND, 0)
                 }
                 val diffDays = ((raceCal.timeInMillis - nowCal.timeInMillis) / 86400000L).toInt().coerceAtLeast(0)
-                val cleanRaceTitle = raceEvent.title
-                    .replace("🏁 RACE DAY: ", "")
-                    .replace("🏁 RACE DAY:", "")
-                    .replace("🏁 ", "")
-                    .trim()
-                    .ifBlank { "RACE DAY" }
-
-                val maxWeekInCal = gcalPlannedList.mapNotNull {
-                    Regex("W(\\d+)").find(it.title)?.groupValues?.get(1)?.toIntOrNull()
-                }.maxOrNull() ?: 10
-                val totalWeeks = if (maxWeekInCal > 0) maxWeekInCal else 10
-
-                var currentWeek = 0
-                val thisWeekWorkout = gcalPlannedList.firstOrNull { it.startMillis in mondayMillis..sundayMillis }
-                val weekMatch = if (thisWeekWorkout != null) Regex("W(\\d+)").find(thisWeekWorkout.title) else null
-                if (weekMatch != null) {
-                    currentWeek = weekMatch.groupValues[1].toIntOrNull() ?: 0
-                } else {
+                if (currentWeek == 0) {
                     currentWeek = (totalWeeks - (diffDays / 7)).coerceIn(1, totalWeeks)
                 }
 
@@ -826,6 +828,33 @@ object LapsRepository {
 
             val lastRunData = recentList.firstOrNull() ?: LastRunData.empty()
 
+            val effectivePlan = when {
+                hasConfiguredGCalPlan -> activePlan
+                raceEvent != null && calId != -1L -> {
+                    val totalWeeks = if (maxWeekInCal > 0) maxWeekInCal else 10
+                    val startMillis = mondayMillis - ((currentWeek.coerceAtLeast(1) - 1) * 7 * 86400000L)
+                    ActivePlanInfo(
+                        distanceLabel = if (cleanRaceTitle.contains("MARATHON", ignoreCase = true) && !cleanRaceTitle.contains("HALF", ignoreCase = true)) "Marathon" else "Half Marathon",
+                        planWeeks = totalWeeks,
+                        startDateMillis = startMillis,
+                        raceDateMillis = raceEvent.startMillis,
+                        calendarId = calId,
+                        customRaceName = cleanRaceTitle
+                    )
+                }
+                corosSchedule != null && corosSchedule.planName.isNotBlank() -> {
+                    ActivePlanInfo(
+                        distanceLabel = corosSchedule.planName,
+                        planWeeks = 10,
+                        startDateMillis = mondayMillis,
+                        raceDateMillis = mondayMillis + 35 * 86400000L,
+                        calendarId = -1L,
+                        customRaceName = corosSchedule.planName
+                    )
+                }
+                else -> null
+            }
+
             val payload = LapsPayload(
                 updatedLabel = SimpleDateFormat("h:mm a", Locale.US).format(Date()),
                 athlete = AthleteProfile(profile.nickname, profile.rhr, profile.maxHr, profile.lthr, profile.ltspPace, profile.weightKg),
@@ -858,7 +887,7 @@ object LapsRepository {
                 zoneSpectrum = ZoneSpectrumData(aerobicPct = aeroPct, thresholdPct = 100 - aeroPct),
                 lastRun = lastRunData,
                 missedWorkout = missedWorkoutData,
-                activePlan = if (hasConfiguredGCalPlan) activePlan else (if (corosSchedule != null && corosSchedule.planName.isNotBlank()) ActivePlanInfo(distanceLabel = corosSchedule.planName, planWeeks = 10, startDateMillis = mondayMillis, raceDateMillis = mondayMillis + 35 * 86400000L, calendarId = -1L, customRaceName = corosSchedule.planName) else null),
+                activePlan = effectivePlan,
                 recentRuns = recentList,
                 isMetricsOnly = isMetricsOnly
             )

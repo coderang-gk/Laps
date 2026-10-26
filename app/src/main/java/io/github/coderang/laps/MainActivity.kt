@@ -3312,10 +3312,47 @@ private fun PlanRaceHubScreen(
     val hasCalendar = selectedCalId > 0L
     val coroutineScope = rememberCoroutineScope()
 
-    // Generate in-memory multi-week workouts for display
-    val workoutsByWeek = remember(activePlan) {
+    // Multi-week workouts for display (from real Google Calendar events first, then generator fallback)
+    val workoutsByWeek = remember(activePlan, selectedCalId) {
         if (activePlan == null) {
             emptyMap<Int, List<PlanGenerator.PlanWorkoutItem>>()
+        } else if (activePlan.calendarId > 0L) {
+            val calEvents = CalendarSyncManager.getPlannedWorkouts(
+                context = context,
+                calendarId = activePlan.calendarId,
+                startMillis = activePlan.startDateMillis - (7 * 86400000L),
+                endMillis = activePlan.raceDateMillis + 86400000L
+            )
+            if (calEvents.isNotEmpty()) {
+                val list = calEvents.map { ev ->
+                    val weekNum = Regex("W(\\d+)").find(ev.title)?.groupValues?.get(1)?.toIntOrNull()
+                        ?: activePlan.planWeeks
+                    val dayOffset = ((ev.startMillis - activePlan.startDateMillis) / 86400000L).toInt().coerceAtLeast(0)
+                    Pair(
+                        weekNum,
+                        PlanGenerator.PlanWorkoutItem(
+                            dayOffset = dayOffset,
+                            title = ev.title,
+                            description = ev.description,
+                            targetDistanceKm = ev.targetDistanceKm,
+                            workoutType = ev.workoutType,
+                            dateMillis = ev.startMillis
+                        )
+                    )
+                }
+                list.groupBy({ it.first }, { it.second })
+            } else {
+                val distEnum = PlanGenerator.RaceDistance.entries.find { it.label.equals(activePlan.distanceLabel, ignoreCase = true) }
+                    ?: PlanGenerator.RaceDistance.HALF_MARATHON
+                val all = PlanGenerator.generatePlan(
+                    calendarId = -1L,
+                    raceDistance = distEnum,
+                    startDateMillis = activePlan.startDateMillis,
+                    planWeeks = activePlan.planWeeks,
+                    customRaceName = activePlan.customRaceName
+                )
+                all.groupBy { (it.dayOffset / 7) + 1 }
+            }
         } else {
             val distEnum = PlanGenerator.RaceDistance.entries.find { it.label.equals(activePlan.distanceLabel, ignoreCase = true) }
                 ?: PlanGenerator.RaceDistance.HALF_MARATHON

@@ -488,13 +488,20 @@ object CalendarSyncManager {
         if (totalMatcher.find()) {
             dist = totalMatcher.group(1)?.toDoubleOrNull() ?: 0.0
         } else {
-            val distMatcher = Pattern.compile("(?<![x×\\d.])(\\d+(?:\\.\\d+)?)\\s*(?:km|k\\b)").matcher(combined)
-            if (distMatcher.find()) {
-                dist = distMatcher.group(1)?.toDoubleOrNull() ?: 0.0
-            } else if (combined.contains("half marathon") || combined.contains("21.1")) {
-                dist = 21.1
-            } else if (combined.contains("marathon") || combined.contains("42.2")) {
-                dist = 42.2
+            val intervalMatcher = Pattern.compile("(\\d+)\\s*[x×]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:km|k\\b)").matcher(combined)
+            if (intervalMatcher.find()) {
+                val reps = intervalMatcher.group(1)?.toIntOrNull() ?: 1
+                val intervalKm = intervalMatcher.group(2)?.toDoubleOrNull() ?: 0.0
+                dist = reps * intervalKm
+            } else {
+                val distMatcher = Pattern.compile("(?<![x×\\d.])(\\d+(?:\\.\\d+)?)\\s*(?:km|k\\b)").matcher(combined)
+                if (distMatcher.find()) {
+                    dist = distMatcher.group(1)?.toDoubleOrNull() ?: 0.0
+                } else if (combined.contains("half marathon") || combined.contains("21.1")) {
+                    dist = 21.1
+                } else if (combined.contains("marathon") || combined.contains("42.2")) {
+                    dist = 42.2
+                }
             }
         }
 
