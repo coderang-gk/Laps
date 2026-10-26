@@ -10,6 +10,11 @@ enum class WatchFaceStyle(
     val subtitle: String,
     val description: String
 ) {
+    PIXEL_BUBBLY(
+        title = "Pixel Bold Bubbly",
+        subtitle = "Interlocking Pillow Numerals",
+        description = "Chunky, colorful interlocking digits inspired by the Pixel Watch Bold Digital & Android 14 lock screen."
+    ),
     CONCENTRIC(
         title = "Pixel Concentric",
         subtitle = "Radial Dial & Google Sans Digital",

@@ -80,6 +80,13 @@ fun WatchFacePreviewCanvas(
             Typeface.DEFAULT_BOLD
         }
     }
+    val bubblyFont = remember {
+        try {
+            ResourcesCompat.getFont(context, R.font.google_sans_flex_bubbly)
+        } catch (_: Exception) {
+            Typeface.DEFAULT_BOLD
+        }
+    }
     val monoFont = remember {
         try {
             ResourcesCompat.getFont(context, R.font.google_sans_mono)
@@ -148,6 +155,22 @@ fun WatchFacePreviewCanvas(
                 val radius = size.width / 2f
 
                 when (config.style) {
+                    WatchFaceStyle.PIXEL_BUBBLY -> {
+                        drawPixelBubblyWatchFace(
+                            center = center,
+                            radius = radius,
+                            config = config,
+                            hoursStr = hoursStr,
+                            minutesStr = minutesStr,
+                            dateStr = dateStr,
+                            acuteLoad = acuteLoad,
+                            thresholdPace = thresholdPace,
+                            daysToRace = daysToRace,
+                            bubblyFont = bubblyFont,
+                            monoFont = monoFont
+                        )
+                    }
+
                     WatchFaceStyle.CONCENTRIC -> {
                         drawConcentricWatchFace(
                             center = center,
@@ -217,6 +240,104 @@ fun WatchFacePreviewCanvas(
             }
         }
     }
+}
+
+/**
+ * 0. Pixel Bold Bubbly Dial (Interlocking 4-digit pillow typography)
+ */
+private fun DrawScope.drawPixelBubblyWatchFace(
+    center: Offset,
+    radius: Float,
+    config: WatchFaceConfig,
+    hoursStr: String,
+    minutesStr: String,
+    dateStr: String,
+    acuteLoad: Int,
+    thresholdPace: String,
+    daysToRace: Int,
+    bubblyFont: Typeface?,
+    monoFont: Typeface?
+) {
+    val c1 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.primaryColor else Color(0xFFFF8A9E)
+    val c2 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.secondaryColor else Color(0xFF64B5F6)
+    val c3 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.accentColor else Color(0xFFF5F5F5)
+    val c4 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.primaryColor else Color(0xFFBA68C8)
+
+    // Outer Edge Complications
+    val compPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        typeface = monoFont ?: Typeface.MONOSPACE
+        color = config.palette.secondaryColor.toArgb()
+        textSize = radius * 0.092f
+        textAlign = android.graphics.Paint.Align.CENTER
+    }
+
+    // Top: Date (e.g. "MAR 27 • FRI")
+    drawContext.canvas.nativeCanvas.drawText(
+        dateStr,
+        center.x,
+        center.y - (radius * 0.74f),
+        compPaint
+    )
+
+    // Left: Acute Load (e.g. "311 AC")
+    drawContext.canvas.nativeCanvas.drawText(
+        "$acuteLoad AC",
+        center.x - (radius * 0.64f),
+        center.y + (radius * 0.02f),
+        compPaint
+    )
+
+    // Right: Threshold Pace (e.g. "4:56/KM")
+    drawContext.canvas.nativeCanvas.drawText(
+        thresholdPace,
+        center.x + (radius * 0.64f),
+        center.y + (radius * 0.02f),
+        compPaint
+    )
+
+    // Bottom: Race Countdown (e.g. "47d RACE")
+    drawContext.canvas.nativeCanvas.drawText(
+        "${daysToRace}d RACE",
+        center.x,
+        center.y + (radius * 0.78f),
+        compPaint
+    )
+
+    // Center 4 Interlocking Tilted Digits
+    val d0 = if (hoursStr.length >= 2) hoursStr.substring(0, 1) else "0"
+    val d1 = if (hoursStr.length >= 2) hoursStr.substring(1, 2) else hoursStr
+    val d2 = if (minutesStr.length >= 2) minutesStr.substring(0, 1) else "0"
+    val d3 = if (minutesStr.length >= 2) minutesStr.substring(1, 2) else minutesStr
+
+    fun drawTiltedDigit(char: String, color: Color, xOff: Float, yOff: Float, angleDeg: Float) {
+        val paint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
+            this.color = color.toArgb()
+            textSize = radius * 0.60f
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+        val canvas = drawContext.canvas.nativeCanvas
+        canvas.save()
+        canvas.translate(center.x + xOff, center.y + yOff)
+        canvas.rotate(angleDeg)
+        val yBaseline = -((paint.descent() + paint.ascent()) / 2f)
+        canvas.drawText(char, 0f, yBaseline, paint)
+        canvas.restore()
+    }
+
+    val xSpread = radius * 0.28f
+    val ySpread = radius * 0.26f
+
+    // 0: Pink tilted -10°
+    drawTiltedDigit(d0, c1, -xSpread, -ySpread, -10f)
+    // 6: Sky Blue tilted +12°
+    drawTiltedDigit(d1, c2, xSpread, -ySpread, 12f)
+    // 0: Off-white tilted +8°
+    drawTiltedDigit(d2, c3, -xSpread, ySpread, 8f)
+    // 9: Lavender tilted -9°
+    drawTiltedDigit(d3, c4, xSpread, ySpread, -9f)
 }
 
 /**

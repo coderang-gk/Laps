@@ -201,6 +201,24 @@ object CorosWatchFaceCompiler {
                 }
             }
 
+            WatchFaceStyle.PIXEL_BUBBLY -> {
+                // Clean canvas with subtle peripheral indicator dots
+                val dotPaint = Paint().apply {
+                    color = config.palette.secondaryColor.toArgb()
+                    alpha = 45
+                    isAntiAlias = true
+                }
+                for (i in 0 until 12) {
+                    val angle = (i * 30f - 90f) * (PI / 180f).toFloat()
+                    canvas.drawCircle(
+                        center + radius * 0.92f * cos(angle),
+                        center + radius * 0.92f * sin(angle),
+                        resolution * 0.008f,
+                        dotPaint
+                    )
+                }
+            }
+
             WatchFaceStyle.STACKED_BOLD -> {
                 val dotPaint = Paint().apply {
                     color = config.palette.primaryColor.toArgb()
@@ -252,6 +270,8 @@ object CorosWatchFaceCompiler {
     private fun resolveTypeface(context: Context, config: WatchFaceConfig): Typeface? {
         return try {
             when (config.style) {
+                WatchFaceStyle.PIXEL_BUBBLY ->
+                    ResourcesCompat.getFont(context, R.font.google_sans_flex_bubbly)
                 WatchFaceStyle.STACKED_BOLD ->
                     ResourcesCompat.getFont(context, R.font.google_sans_flex_stacked)
                 WatchFaceStyle.CONCENTRIC ->
