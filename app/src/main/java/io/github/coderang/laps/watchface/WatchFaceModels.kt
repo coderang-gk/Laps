@@ -120,7 +120,7 @@ enum class ComplicationType(val label: String, val iconDesc: String) {
 }
 
 data class WatchFaceConfig(
-    val style: WatchFaceStyle = WatchFaceStyle.CONCENTRIC,
+    val style: WatchFaceStyle = WatchFaceStyle.PIXEL_BUBBLY,
     val model: WatchModelPreset = WatchModelPreset.PACE_3,
     val palette: WatchFacePalette = WatchFacePalette.DYNAMIC_M3,
     val topComplication: ComplicationType = ComplicationType.ACUTE_LOAD,

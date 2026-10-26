@@ -258,17 +258,17 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     bubblyFont: Typeface?,
     monoFont: Typeface?
 ) {
-    val c1 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.primaryColor else Color(0xFFFF8A9E)
-    val c2 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.secondaryColor else Color(0xFF64B5F6)
-    val c3 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.accentColor else Color(0xFFF5F5F5)
-    val c4 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.primaryColor else Color(0xFFBA68C8)
+    val c1 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.primaryColor else Color(0xFFFF9BB2) // Soft Pink
+    val c2 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.secondaryColor else Color(0xFF6BB5F9) // Sky Blue
+    val c3 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.accentColor else Color(0xFFF7F7F7) // Off-white
+    val c4 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.primaryColor else Color(0xFFCE88D8) // Lavender Purple
 
-    // Outer Edge Complications
+    // Outer Edge Complications (Pushed to perimeter like Pixel Watch Radial)
     val compPaint = android.graphics.Paint().apply {
         isAntiAlias = true
         typeface = monoFont ?: Typeface.MONOSPACE
         color = config.palette.secondaryColor.toArgb()
-        textSize = radius * 0.092f
+        textSize = radius * 0.088f
         textAlign = android.graphics.Paint.Align.CENTER
     }
 
@@ -276,31 +276,31 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     drawContext.canvas.nativeCanvas.drawText(
         dateStr,
         center.x,
-        center.y - (radius * 0.74f),
+        center.y - (radius * 0.82f),
         compPaint
     )
 
-    // Left: Acute Load (e.g. "311 AC")
+    // Left: Battery / Acute Load
     drawContext.canvas.nativeCanvas.drawText(
         "$acuteLoad AC",
-        center.x - (radius * 0.64f),
+        center.x - (radius * 0.78f),
         center.y + (radius * 0.02f),
         compPaint
     )
 
-    // Right: Threshold Pace (e.g. "4:56/KM")
+    // Right: Threshold Pace
     drawContext.canvas.nativeCanvas.drawText(
         thresholdPace,
-        center.x + (radius * 0.64f),
+        center.x + (radius * 0.78f),
         center.y + (radius * 0.02f),
         compPaint
     )
 
-    // Bottom: Race Countdown (e.g. "47d RACE")
+    // Bottom: Race Countdown
     drawContext.canvas.nativeCanvas.drawText(
         "${daysToRace}d RACE",
         center.x,
-        center.y + (radius * 0.78f),
+        center.y + (radius * 0.84f),
         compPaint
     )
 
@@ -310,34 +310,65 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     val d2 = if (minutesStr.length >= 2) minutesStr.substring(0, 1) else "0"
     val d3 = if (minutesStr.length >= 2) minutesStr.substring(1, 2) else minutesStr
 
-    fun drawTiltedDigit(char: String, color: Color, xOff: Float, yOff: Float, angleDeg: Float) {
-        val paint = android.graphics.Paint().apply {
-            isAntiAlias = true
-            typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
-            this.color = color.toArgb()
-            textSize = radius * 0.60f
-            textAlign = android.graphics.Paint.Align.CENTER
-        }
+    fun drawInterlockingDigit(
+        char: String,
+        fillColor: Color,
+        xOff: Float,
+        yOff: Float,
+        angleDeg: Float
+    ) {
+        val textSizePx = radius * 0.88f
         val canvas = drawContext.canvas.nativeCanvas
         canvas.save()
         canvas.translate(center.x + xOff, center.y + yOff)
         canvas.rotate(angleDeg)
-        val yBaseline = -((paint.descent() + paint.ascent()) / 2f)
-        canvas.drawText(char, 0f, yBaseline, paint)
+
+        // 1. Dark outline cut-out (creates the overlapping jigsaw separation)
+        val strokePaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
+            this.textSize = textSizePx
+            this.textAlign = android.graphics.Paint.Align.CENTER
+            this.style = android.graphics.Paint.Style.STROKE
+            this.strokeWidth = radius * 0.052f
+            this.strokeJoin = android.graphics.Paint.Join.ROUND
+            this.color = config.palette.backgroundColor.toArgb()
+        }
+
+        // 2. Solid color fill
+        val fillPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
+            this.textSize = textSizePx
+            this.textAlign = android.graphics.Paint.Align.CENTER
+            this.style = android.graphics.Paint.Style.FILL
+            this.color = fillColor.toArgb()
+        }
+
+        val yBaseline = -((fillPaint.descent() + fillPaint.ascent()) / 2f)
+
+        // Draw outline cutout first, then vibrant fill
+        canvas.drawText(char, 0f, yBaseline, strokePaint)
+        canvas.drawText(char, 0f, yBaseline, fillPaint)
+
         canvas.restore()
     }
 
-    val xSpread = radius * 0.28f
-    val ySpread = radius * 0.26f
+    // Tight interlocking offset spacing
+    val xSpread = radius * 0.17f
+    val ySpread = radius * 0.18f
 
-    // 0: Pink tilted -10°
-    drawTiltedDigit(d0, c1, -xSpread, -ySpread, -10f)
-    // 6: Sky Blue tilted +12°
-    drawTiltedDigit(d1, c2, xSpread, -ySpread, 12f)
-    // 0: Off-white tilted +8°
-    drawTiltedDigit(d2, c3, -xSpread, ySpread, 8f)
-    // 9: Lavender tilted -9°
-    drawTiltedDigit(d3, c4, xSpread, ySpread, -9f)
+    // Layer 1: Top-Left (d0, Pink) tilted -9°
+    drawInterlockingDigit(d0, c1, -xSpread - (radius * 0.02f), -ySpread, -9f)
+
+    // Layer 2: Top-Right (d1, Blue) tilted +12° (overlaps on top of d0)
+    drawInterlockingDigit(d1, c2, xSpread + (radius * 0.02f), -ySpread - (radius * 0.01f), 12f)
+
+    // Layer 3: Bottom-Left (d2, White) tilted +7° (overlaps on top of d0)
+    drawInterlockingDigit(d2, c3, -xSpread, ySpread, 7f)
+
+    // Layer 4: Bottom-Right (d3, Purple) tilted -8° (overlaps on top of d1 and d2)
+    drawInterlockingDigit(d3, c4, xSpread, ySpread - (radius * 0.01f), -8f)
 }
 
 /**
