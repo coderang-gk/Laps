@@ -15,14 +15,20 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +37,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
@@ -204,165 +213,184 @@ class MainActivity : ComponentActivity() {
             }
 
             MaterialTheme(colorScheme = colorScheme) {
-                when (currentScreen) {
-                    AppScreen.MAIN -> {
-                        MainAppScaffold(
-                            payload = payload,
-                            isSyncing = isSyncing,
-                            selectedSection = selectedSection,
-                            onSectionSelected = { selectedSection = it },
-                            selectedFilter = selectedFilter,
-                            onFilterSelected = { selectedFilter = it },
-                            catalog = catalog,
-                            onRunClicked = { run -> selectedRunForDetail = run },
-                            onResolveMissedWorkout = { action, targetDate ->
-                                val missed = payload.missedWorkout ?: return@MainAppScaffold
-                                isResolvingMissed = true
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    val success = if (action == "SHIFT") {
-                                        val cal = Calendar.getInstance()
-                                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                                        val targetTime = try {
-                                            sdf.parse(targetDate)?.time ?: (System.currentTimeMillis() + 86400000L)
-                                        } catch (_: Exception) { System.currentTimeMillis() + 86400000L }
-                                        CalendarSyncManager.shiftWorkout(context, missed.eventId, targetTime)
-                                    } else {
-                                        CalendarSyncManager.skipWorkout(context, missed.eventId)
-                                    }
-
-                                    withContext(Dispatchers.Main) {
-                                        isResolvingMissed = false
-                                        val updated = payload.copy(missedWorkout = null)
-                                        payload = updated
-                                        LapsRepository.setCachedPayload(updated)
-                                        LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context)
-
-                                        val msg = if (action == "SHIFT") {
-                                            "Shifted to ${targetDate.ifBlank { "upcoming day" }} in Device Calendar"
+                AnimatedContent(
+                    targetState = currentScreen,
+                    transitionSpec = {
+                        val toRight = targetState.ordinal > initialState.ordinal
+                        val slideOffset = if (toRight) 1 else -1
+                        (slideInHorizontally(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+                            initialOffsetX = { (it * 0.35f * slideOffset).toInt() }
+                        ) + fadeIn(tween(220)))
+                        .togetherWith(
+                            slideOutHorizontally(
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                                targetOffsetX = { -(it * 0.25f * slideOffset).toInt() }
+                            ) + fadeOut(tween(160))
+                        )
+                    },
+                    label = "screen_navigation_spring"
+                ) { screen ->
+                    when (screen) {
+                        AppScreen.MAIN -> {
+                            MainAppScaffold(
+                                payload = payload,
+                                isSyncing = isSyncing,
+                                selectedSection = selectedSection,
+                                onSectionSelected = { selectedSection = it },
+                                selectedFilter = selectedFilter,
+                                onFilterSelected = { selectedFilter = it },
+                                catalog = catalog,
+                                onRunClicked = { run -> selectedRunForDetail = run },
+                                onResolveMissedWorkout = { action, targetDate ->
+                                    val missed = payload.missedWorkout ?: return@MainAppScaffold
+                                    isResolvingMissed = true
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        val success = if (action == "SHIFT") {
+                                            val cal = Calendar.getInstance()
+                                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                                            val targetTime = try {
+                                                sdf.parse(targetDate)?.time ?: (System.currentTimeMillis() + 86400000L)
+                                            } catch (_: Exception) { System.currentTimeMillis() + 86400000L }
+                                            CalendarSyncManager.shiftWorkout(context, missed.eventId, targetTime)
                                         } else {
-                                            "Workout marked [SKIPPED] in Device Calendar"
+                                            CalendarSyncManager.skipWorkout(context, missed.eventId)
                                         }
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            isResolvingMissed = isResolvingMissed,
-                            onSyncClicked = {
-                                isSyncing = true
-                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
-                                    runOnUiThread {
-                                        val (email, pwd) = LapsRepository.getCorosCredentials(context)
-                                        val token = LapsRepository.getCorosToken(context)
-                                        if (token.isBlank() && (email.isBlank() || pwd.isBlank())) {
-                                            LapsRepository.resetSamplePayload(context)
-                                        }
-                                        payload = LapsRepository.getCachedPayload(context)
-                                        isSyncing = false
-                                        res.onSuccess {
-                                            Toast.makeText(context, "Synced directly with COROS & Device Calendar", Toast.LENGTH_SHORT).show()
-                                        }.onFailure { err ->
-                                            Toast.makeText(context, "Using local cache: ${err.message}", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                }
-                            },
-                            onPlanClicked = {
-                                initialPlanHubTab = 0
-                                currentScreen = AppScreen.PLAN_RACE_HUB
-                            },
-                            onWorkoutClicked = {
-                                initialPlanHubTab = 0
-                                currentScreen = AppScreen.PLAN_RACE_HUB
-                            },
-                            onRaceClicked = {
-                                initialPlanHubTab = 1
-                                currentScreen = AppScreen.PLAN_RACE_HUB
-                            },
-                            onSettingsClicked = { currentScreen = AppScreen.SETTINGS },
-                            onConnectAccountClicked = { currentScreen = AppScreen.ONBOARDING },
-                            onPinWidget = { item ->
-                                LapsRepository.setStyleForTile(context, item.slot, item.styleIndex)
-                                LapsWidgetUpdateHelper.renderAllFromCache(context)
-                                pinWidgetToLauncher(item)
-                            }
-                        )
 
-                        selectedRunForDetail?.let { run ->
-                            RunDetailModalBottomSheet(
-                                run = run,
-                                onDismiss = { selectedRunForDetail = null }
-                            )
-                        }
-                    }
-                    AppScreen.ONBOARDING -> {
-                        LapsOnboardingScreen(
-                            onConnected = {
-                                currentScreen = AppScreen.MAIN
-                                isSyncing = true
-                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
-                                    runOnUiThread {
-                                        payload = LapsRepository.getCachedPayload(context)
-                                        isSyncing = false
+                                        withContext(Dispatchers.Main) {
+                                            isResolvingMissed = false
+                                            val updated = payload.copy(missedWorkout = null)
+                                            payload = updated
+                                            LapsRepository.setCachedPayload(updated)
+                                            LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context)
+
+                                            val msg = if (action == "SHIFT") {
+                                                "Shifted to ${targetDate.ifBlank { "upcoming day" }} in Device Calendar"
+                                            } else {
+                                                "Workout marked [SKIPPED] in Device Calendar"
+                                            }
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
                                     }
+                                },
+                                isResolvingMissed = isResolvingMissed,
+                                onSyncClicked = {
+                                    isSyncing = true
+                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
+                                        runOnUiThread {
+                                            val (email, pwd) = LapsRepository.getCorosCredentials(context)
+                                            val token = LapsRepository.getCorosToken(context)
+                                            if (token.isBlank() && (email.isBlank() || pwd.isBlank())) {
+                                                LapsRepository.resetSamplePayload(context)
+                                            }
+                                            payload = LapsRepository.getCachedPayload(context)
+                                            isSyncing = false
+                                            res.onSuccess {
+                                                Toast.makeText(context, "Synced directly with COROS & Device Calendar", Toast.LENGTH_SHORT).show()
+                                            }.onFailure { err ->
+                                                Toast.makeText(context, "Using local cache: ${err.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                onPlanClicked = {
+                                    initialPlanHubTab = 0
+                                    currentScreen = AppScreen.PLAN_RACE_HUB
+                                },
+                                onWorkoutClicked = {
+                                    initialPlanHubTab = 0
+                                    currentScreen = AppScreen.PLAN_RACE_HUB
+                                },
+                                onRaceClicked = {
+                                    initialPlanHubTab = 1
+                                    currentScreen = AppScreen.PLAN_RACE_HUB
+                                },
+                                onSettingsClicked = { currentScreen = AppScreen.SETTINGS },
+                                onConnectAccountClicked = { currentScreen = AppScreen.ONBOARDING },
+                                onPinWidget = { item ->
+                                    LapsRepository.setStyleForTile(context, item.slot, item.styleIndex)
+                                    LapsWidgetUpdateHelper.renderAllFromCache(context)
+                                    pinWidgetToLauncher(item)
                                 }
-                            },
-                            onExploreDemo = {
-                                LapsRepository.setSetupCompleted(context, true)
-                                currentScreen = AppScreen.MAIN
+                            )
+
+                            selectedRunForDetail?.let { run ->
+                                RunDetailModalBottomSheet(
+                                    run = run,
+                                    onDismiss = { selectedRunForDetail = null }
+                                )
                             }
-                        )
-                    }
-                    AppScreen.SETTINGS -> {
-                        LapsSettingsScreen(
-                            payload = payload,
-                            currentTheme = appTheme,
-                            onThemeChange = { newTheme ->
-                                appTheme = newTheme
-                                LapsRepository.saveAppTheme(context, newTheme)
-                                LapsWidgetUpdateHelper.renderAllFromCache(context)
-                            },
-                            onNavigateBack = { currentScreen = AppScreen.MAIN },
-                            onSaved = {
-                                if (!LapsRepository.hasCredentials(context)) {
-                                    currentScreen = AppScreen.ONBOARDING
-                                } else {
+                        }
+                        AppScreen.ONBOARDING -> {
+                            LapsOnboardingScreen(
+                                onConnected = {
+                                    currentScreen = AppScreen.MAIN
+                                    isSyncing = true
+                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
+                                        runOnUiThread {
+                                            payload = LapsRepository.getCachedPayload(context)
+                                            isSyncing = false
+                                        }
+                                    }
+                                },
+                                onExploreDemo = {
+                                    LapsRepository.setSetupCompleted(context, true)
                                     currentScreen = AppScreen.MAIN
                                 }
-                                isSyncing = true
-                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
-                                    runOnUiThread {
-                                        payload = LapsRepository.getCachedPayload(context)
-                                        isSyncing = false
-                                        res.onSuccess {
-                                            Toast.makeText(context, "Logged in & Synced directly with COROS!", Toast.LENGTH_SHORT).show()
-                                        }.onFailure { err ->
-                                            Toast.makeText(context, "Sync note: ${err.message}", Toast.LENGTH_LONG).show()
+                            )
+                        }
+                        AppScreen.SETTINGS -> {
+                            LapsSettingsScreen(
+                                payload = payload,
+                                currentTheme = appTheme,
+                                onThemeChange = { newTheme ->
+                                    appTheme = newTheme
+                                    LapsRepository.saveAppTheme(context, newTheme)
+                                    LapsWidgetUpdateHelper.renderAllFromCache(context)
+                                },
+                                onNavigateBack = { currentScreen = AppScreen.MAIN },
+                                onSaved = {
+                                    if (!LapsRepository.hasCredentials(context)) {
+                                        currentScreen = AppScreen.ONBOARDING
+                                    } else {
+                                        currentScreen = AppScreen.MAIN
+                                    }
+                                    isSyncing = true
+                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
+                                        runOnUiThread {
+                                            payload = LapsRepository.getCachedPayload(context)
+                                            isSyncing = false
+                                            res.onSuccess {
+                                                Toast.makeText(context, "Logged in & Synced directly with COROS!", Toast.LENGTH_SHORT).show()
+                                            }.onFailure { err ->
+                                                Toast.makeText(context, "Sync note: ${err.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                onOpenPlanHub = {
+                                    initialPlanHubTab = 0
+                                    currentScreen = AppScreen.PLAN_RACE_HUB
+                                }
+                            )
+                        }
+                        AppScreen.PLAN_RACE_HUB -> {
+                            PlanRaceHubScreen(
+                                payload = payload,
+                                initialTab = initialPlanHubTab,
+                                onNavigateBack = { currentScreen = AppScreen.MAIN },
+                                onOpenSettings = { currentScreen = AppScreen.SETTINGS },
+                                onPlanPublished = {
+                                    isSyncing = true
+                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
+                                        runOnUiThread {
+                                            payload = LapsRepository.getCachedPayload(context)
+                                            isSyncing = false
                                         }
                                     }
                                 }
-                            },
-                            onOpenPlanHub = {
-                                initialPlanHubTab = 0
-                                currentScreen = AppScreen.PLAN_RACE_HUB
-                            }
-                        )
-                    }
-                    AppScreen.PLAN_RACE_HUB -> {
-                        PlanRaceHubScreen(
-                            payload = payload,
-                            initialTab = initialPlanHubTab,
-                            onNavigateBack = { currentScreen = AppScreen.MAIN },
-                            onOpenSettings = { currentScreen = AppScreen.SETTINGS },
-                            onPlanPublished = {
-                                isSyncing = true
-                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
-                                    runOnUiThread {
-                                        payload = LapsRepository.getCachedPayload(context)
-                                        isSyncing = false
-                                    }
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -474,8 +502,9 @@ private fun MainAppScaffold(
                     onClick = { onSectionSelected(0) },
                     icon = {
                         Icon(
-                            imageVector = rememberHubVector(),
-                            contentDescription = "Training Hub"
+                            painter = painterResource(id = R.drawable.ic_laps_dock_icon),
+                            contentDescription = "Training Hub",
+                            modifier = Modifier.size(24.dp)
                         )
                     },
                     label = {
@@ -504,29 +533,59 @@ private fun MainAppScaffold(
             }
         }
     ) { innerPadding ->
-        if (selectedSection == 0) {
-            TrainingHubSection(
-                payload = payload,
-                isSyncing = isSyncing,
-                contentPadding = innerPadding,
-                onRunClicked = onRunClicked,
-                onResolveMissedWorkout = onResolveMissedWorkout,
-                isResolvingMissed = isResolvingMissed,
-                onConnectAccountClicked = onConnectAccountClicked,
-                onPlanClicked = onPlanClicked,
-                onWorkoutClicked = onWorkoutClicked,
-                onRaceClicked = onRaceClicked,
-                onBrowseWidgetsClicked = { onSectionSelected(1) }
-            )
-        } else {
-            WidgetsGallerySection(
-                payload = payload,
-                selectedFilter = selectedFilter,
-                onFilterSelected = onFilterSelected,
-                catalog = catalog,
-                contentPadding = innerPadding,
-                onPinWidget = onPinWidget
-            )
+        AnimatedContent(
+            targetState = selectedSection,
+            transitionSpec = {
+                if (targetState > initialState) {
+                    (slideInHorizontally(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+                        initialOffsetX = { it / 3 }
+                    ) + fadeIn(tween(180)))
+                    .togetherWith(
+                        slideOutHorizontally(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                            targetOffsetX = { -it / 3 }
+                        ) + fadeOut(tween(140))
+                    )
+                } else {
+                    (slideInHorizontally(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+                        initialOffsetX = { -it / 3 }
+                    ) + fadeIn(tween(180)))
+                    .togetherWith(
+                        slideOutHorizontally(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                            targetOffsetX = { it / 3 }
+                        ) + fadeOut(tween(140))
+                    )
+                }
+            },
+            label = "section_nav_transition"
+        ) { section ->
+            if (section == 0) {
+                TrainingHubSection(
+                    payload = payload,
+                    isSyncing = isSyncing,
+                    contentPadding = innerPadding,
+                    onRunClicked = onRunClicked,
+                    onResolveMissedWorkout = onResolveMissedWorkout,
+                    isResolvingMissed = isResolvingMissed,
+                    onConnectAccountClicked = onConnectAccountClicked,
+                    onPlanClicked = onPlanClicked,
+                    onWorkoutClicked = onWorkoutClicked,
+                    onRaceClicked = onRaceClicked,
+                    onBrowseWidgetsClicked = { onSectionSelected(1) }
+                )
+            } else {
+                WidgetsGallerySection(
+                    payload = payload,
+                    selectedFilter = selectedFilter,
+                    onFilterSelected = onFilterSelected,
+                    catalog = catalog,
+                    contentPadding = innerPadding,
+                    onPinWidget = onPinWidget
+                )
+            }
         }
     }
 }
@@ -916,6 +975,14 @@ private fun WidgetsGallerySection(
         }
     }
 
+    var previewMode by remember { mutableStateOf("SYSTEM") } // "SYSTEM", "LIGHT", "DARK"
+    val isDarkSystem = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val forcedTheme = when (previewMode) {
+        "LIGHT" -> "LIGHT"
+        "DARK" -> "DARK"
+        else -> if (isDarkSystem) "DARK" else "LIGHT"
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = Modifier
@@ -925,34 +992,82 @@ private fun WidgetsGallerySection(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Expressive Header Hero Banner
         item(span = { GridItemSpan(2) }) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Tap any widget to apply & pin",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Colors automatically adapt to your device wallpaper & dark/light theme.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                        )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "WIDGETS STUDIO",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Glanceable Metrics",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Preview Theme Selector Pills
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                listOf(
+                                    "SYSTEM" to "Auto",
+                                    "LIGHT" to "☀️ Light",
+                                    "DARK" to "🌙 Dark"
+                                ).forEach { (mode, label) ->
+                                    val isSel = previewMode == mode
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .clickable { previewMode = mode }
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Tap any widget to set active style and pin directly to your home screen. Automatically adapts to wallpaper & theme.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
 
+        // Segmented filter row
         item(span = { GridItemSpan(2) }) {
             val options = listOf("All (12)", "Sculptural (6)", "Data Cards (6)")
             SingleChoiceSegmentedButtonRow(
@@ -969,7 +1084,7 @@ private fun WidgetsGallerySection(
                         Text(
                             text = label,
                             style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selectedFilter == index) FontWeight.SemiBold else FontWeight.Normal
+                            fontWeight = if (selectedFilter == index) FontWeight.Bold else FontWeight.Normal
                         )
                     }
                 }
@@ -980,6 +1095,7 @@ private fun WidgetsGallerySection(
             StockPixelWidgetCard(
                 item = item,
                 payload = payload,
+                forcedTheme = forcedTheme,
                 onClick = { onPinWidget(item) }
             )
         }
@@ -1050,32 +1166,40 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
                             text = String.format(Locale.US, "%.1f", wm.actualKm),
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.displaySmall,
                             color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Black
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (isPlanActiveThisWeek && wm.plannedKm > 0) "/ ${String.format(Locale.US, "%.0f", wm.plannedKm)} km" else "km logged",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 3.dp)
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(bottom = 6.dp)
                         )
                     }
                 }
 
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = if (isPlanActiveThisWeek && wm.plannedKm > 0) {
-                            "${wm.completionPct}% Done"
-                        } else {
-                            "${wm.runsCompleted} Runs Logged"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = if (isPlanActiveThisWeek && wm.plannedKm > 0) {
+                                "${wm.completionPct}% Done"
+                            } else {
+                                "${wm.runsCompleted} Runs Logged"
+                            },
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = if (isPlanActiveThisWeek && wm.plannedKm > 0) {
                             "${String.format(Locale.US, "%.1f", wm.remainingKm)} km remaining"
@@ -1087,12 +1211,13 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Weekly Capsule Progress Bar (or Base Volume indicator if pre-plan/metrics)
             val fillFraction = if (isPlanActiveThisWeek && wm.plannedKm > 0) {
@@ -1100,23 +1225,226 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
             } else {
                 (wm.actualKm.toFloat() / 35f).coerceIn(0.08f, 1f)
             }
+            val animatedFillFraction by animateFloatAsState(
+                targetValue = fillFraction,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow
+                ),
+                label = "weekly_capsule_progress_spring"
+            )
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(12.dp)
+                    .height(14.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(fillFraction)
+                        .fillMaxWidth(animatedFillFraction)
                         .fillMaxHeight()
                         .clip(CircleShape)
                         .background(
                             if (isPlanActiveThisWeek) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                         )
                 )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Expressive 7-Day Mini Bar Chart
+            var selectedDayIndex by remember { mutableStateOf<Int?>(null) }
+            val maxDayKm = remember(wm.days) {
+                (wm.days.maxOfOrNull { maxOf(it.actualKm, it.plannedKm) } ?: 10.0).coerceAtLeast(6.0)
+            }
+
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "DAILY BREAKDOWN",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp
+                        )
+                        val activeDay = wm.days.find { it.index == selectedDayIndex }
+                        if (activeDay != null) {
+                            Text(
+                                text = "${activeDay.dayName}: ${if (activeDay.actualKm > 0) String.format(Locale.US, "%.1f km", activeDay.actualKm) else if (activeDay.plannedKm > 0) String.format(Locale.US, "%.0f km planned", activeDay.plannedKm) else "Rest"}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Text(
+                                text = "Tap day for details",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        wm.days.forEach { day ->
+                            val isSelected = selectedDayIndex == day.index
+                            val barTargetFraction = if (day.actualKm > 0) {
+                                (day.actualKm / maxDayKm).toFloat().coerceIn(0.12f, 1f)
+                            } else if (isPlanActiveThisWeek && day.plannedKm > 0) {
+                                (day.plannedKm / maxDayKm).toFloat().coerceIn(0.12f, 1f)
+                            } else {
+                                0f
+                            }
+                            val animatedBarFrac by animateFloatAsState(
+                                targetValue = barTargetFraction,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessLow
+                                ),
+                                label = "day_bar_spring_${day.index}"
+                            )
+
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        selectedDayIndex = if (selectedDayIndex == day.index) null else day.index
+                                    }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(16.dp)
+                                        .height(56.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                            else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f)
+                                        ),
+                                    contentAlignment = Alignment.BottomCenter
+                                ) {
+                                    if (day.actualKm > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .fillMaxHeight(animatedBarFrac)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(
+                                                    if (day.isToday) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                                                )
+                                        )
+                                    } else if (isPlanActiveThisWeek && day.plannedKm > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .fillMaxHeight(animatedBarFrac)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.22f))
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(bottom = 6.dp)
+                                                .size(4.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                if (day.isToday) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = day.dayLetter,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Text(
+                                        text = day.dayLetter,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = selectedDayIndex != null,
+                        enter = fadeIn(tween(180)) + expandVertically(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+                        ),
+                        exit = fadeOut(tween(120)) + shrinkVertically(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+                        )
+                    ) {
+                        val sel = wm.days.find { it.index == selectedDayIndex }
+                        if (sel != null && (sel.actualKm > 0 || sel.plannedKm > 0 || sel.workoutType.isNotBlank())) {
+                            Column {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${sel.dayName} · ${sel.workoutType}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Text(
+                                            text = if (sel.actualKm > 0) "${String.format(Locale.US, "%.1f", sel.actualKm)} km" else "${String.format(Locale.US, "%.0f", sel.plannedKm)} km planned",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -1992,6 +2320,26 @@ private fun AthleteSummaryHeroCard(
     val rc = payload.raceCountdown
     val nw = payload.nextWorkout
 
+    val infiniteTransition = rememberInfiniteTransition(label = "hero_pulse")
+    val pulseSize by infiniteTransition.animateFloat(
+        initialValue = 7f,
+        targetValue = if (isSyncing) 11f else 9.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (isSyncing) 500 else 1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_size"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = if (isSyncing) 0.35f else 0.5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(if (isSyncing) 500 else 1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_alpha"
+    )
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -2013,11 +2361,22 @@ private fun AthleteSummaryHeroCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
+                            modifier = Modifier.size(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(pulseSize.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                        }
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (isSyncing) "Syncing COROS…" else "Updated ${payload.updatedLabel}",
@@ -2074,8 +2433,14 @@ private fun AthleteSummaryHeroCard(
                     sub = wkSub,
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    shape = RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp, topEnd = 10.dp, bottomEnd = 10.dp)
+                    shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp, topEnd = 12.dp, bottomEnd = 12.dp)
                 )
+                val statusDot = when (tl.statusBadge.uppercase(Locale.US)) {
+                    "PRODUCTIVE", "OPTIMAL" -> Color(0xFF10B981) // emerald
+                    "OVERREACHING", "STRAINED" -> Color(0xFFF59E0B) // amber
+                    "FATIGUED", "EXHAUSTED" -> Color(0xFFEF4444) // coral
+                    else -> null
+                }
                 MetricPod(
                     modifier = Modifier.weight(1f),
                     label = "Acute Load",
@@ -2083,7 +2448,8 @@ private fun AthleteSummaryHeroCard(
                     sub = tl.statusBadge.lowercase().replaceFirstChar { it.uppercase() },
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    statusDotColor = statusDot
                 )
                 MetricPod(
                     modifier = Modifier.weight(1f),
@@ -2092,7 +2458,7 @@ private fun AthleteSummaryHeroCard(
                     sub = "${tl.lthr} bpm",
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    shape = RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp, topEnd = 22.dp, bottomEnd = 22.dp)
+                    shape = RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp, topEnd = 24.dp, bottomEnd = 24.dp)
                 )
             }
 
@@ -2108,42 +2474,78 @@ private fun AthleteSummaryHeroCard(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 if (nw.targetDistanceKm > 0 || (nw.title.isNotBlank() && nw.title != "No Scheduled Workout")) {
+                    val accentColor = when {
+                        nw.title.contains("Interval", ignoreCase = true) || nw.title.contains("Tempo", ignoreCase = true) -> Color(0xFFF59E0B)
+                        nw.title.contains("Long Run", ignoreCase = true) -> Color(0xFF8B5CF6)
+                        nw.title.contains("Easy", ignoreCase = true) || nw.title.contains("Recovery", ignoreCase = true) -> Color(0xFF10B981)
+                        nw.title.contains("Race", ignoreCase = true) -> Color(0xFFEF4444)
+                        else -> MaterialTheme.colorScheme.primary
+                    }
+
                     Row(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "NEXT WORKOUT · ${nw.dayBadge}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
+                        Row(
+                            modifier = Modifier.weight(1f).padding(end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(4.dp)
+                                    .height(36.dp)
+                                    .clip(CircleShape)
+                                    .background(accentColor)
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = nw.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = "${nw.targetPace}  ·  ${nw.targetHrZone}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "NEXT WORKOUT · ${nw.dayBadge.uppercase(Locale.US)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = accentColor,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = nw.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${nw.targetPace}  ·  ${nw.targetHrZone}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
                         }
 
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = if (nw.targetDistanceKm > 0) "${nw.targetDistanceKm.toInt()} km" else "Planned",
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                            ) {
+                                Text(
+                                    text = if (nw.targetDistanceKm > 0) "${nw.targetDistanceKm.toInt()} km" else "Planned",
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Icon(
+                                imageVector = rememberChevronRightVector(),
+                                contentDescription = "Open Plan Hub",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -2236,16 +2638,27 @@ private fun AthleteSummaryHeroCard(
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = "${rc.daysLeft}d",
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                fontWeight = FontWeight.Bold
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "${rc.daysLeft}d",
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Icon(
+                                imageVector = rememberChevronRightVector(),
+                                contentDescription = "Open Plan Hub",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -2304,32 +2717,50 @@ private fun MetricPod(
     sub: String,
     containerColor: Color,
     contentColor: Color,
-    shape: RoundedCornerShape
+    shape: RoundedCornerShape,
+    statusDotColor: Color? = null
 ) {
     Surface(
         modifier = modifier,
         shape = shape,
         color = containerColor
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = contentColor.copy(alpha = 0.8f),
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.height(2.dp))
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                if (statusDotColor != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(statusDotColor)
+                    )
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = contentColor.copy(alpha = 0.85f),
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1
+                )
+            }
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
                 text = value,
                 style = MaterialTheme.typography.headlineSmall,
                 color = contentColor,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Black,
                 maxLines = 1
             )
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = sub,
                 style = MaterialTheme.typography.labelSmall,
-                color = contentColor.copy(alpha = 0.85f),
+                color = contentColor.copy(alpha = 0.88f),
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -2341,11 +2772,17 @@ private fun MetricPod(
 private fun StockPixelWidgetCard(
     item: MainActivity.WidgetCatalogItem,
     payload: LapsPayload,
+    forcedTheme: String? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val currentTheme = if (isDark) "DARK" else "LIGHT"
+    val currentTheme = forcedTheme ?: if (isDark) "DARK" else "LIGHT"
+
+    val isCurrentlyActive = remember(item.slot, item.styleIndex) {
+        LapsRepository.getStyleForTile(context, item.slot) == item.styleIndex
+    }
+
     val bitmap = remember(item.styleIndex, payload, currentTheme) {
         ExpressiveWidgetRenderer.renderTileBitmap(
             context = context,
@@ -2358,13 +2795,30 @@ private fun StockPixelWidgetCard(
         )
     }
 
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val cardScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "widget_card_press"
+    )
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .clickable(onClick = onClick),
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
+            .clip(RoundedCornerShape(28.dp)),
         shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        border = if (isCurrentlyActive) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        onClick = onClick,
+        interactionSource = interactionSource
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             // Widget Preview Well
@@ -2387,6 +2841,36 @@ private fun StockPixelWidgetCard(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit
                     )
+
+                    if (isCurrentlyActive) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = rememberCheckVector(),
+                                    contentDescription = "Active style",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Text(
+                                    text = "ACTIVE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -2405,7 +2889,7 @@ private fun StockPixelWidgetCard(
                         text = item.title,
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -2527,6 +3011,89 @@ private fun AuthMethodSegmentedTabs(
                         fontWeight = if (!isOAuthMode) FontWeight.Bold else FontWeight.SemiBold
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CorosRegionDropdown(
+    selectedRegion: String,
+    onRegionSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val corosRegions = listOf(
+        "teamapi.coros.com" to "Global / US",
+        "teameuapi.coros.com" to "Europe",
+        "teamsgapi.coros.com" to "Singapore / Asia",
+        "teamcnapi.coros.com" to "China"
+    )
+    var expanded by remember { mutableStateOf(false) }
+    val currentLabel = corosRegions.find { it.first == selectedRegion }?.second ?: "Global / US"
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        OutlinedCard(
+            onClick = { expanded = !expanded },
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "COROS Server Region",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = currentLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) rememberArrowUpVector() else rememberArrowDownVector(),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.widthIn(min = 220.dp, max = 320.dp)
+        ) {
+            corosRegions.forEach { (reg, label) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = label,
+                            fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selectedRegion == reg) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onClick = {
+                        onRegionSelected(reg)
+                        expanded = false
+                    },
+                    trailingIcon = if (selectedRegion == reg) {
+                        {
+                            Icon(
+                                imageVector = rememberCheckVector(),
+                                contentDescription = "Selected",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    } else null
+                )
             }
         }
     }
@@ -2663,38 +3230,10 @@ private fun LapsOnboardingScreen(
 
                     // Region Selector (Direct Login only)
                     if (!isOAuthMode) {
-                        Column {
-                            Text(
-                                text = "COROS Server Region",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf(
-                                    "teamapi.coros.com" to "Global / US",
-                                    "teameuapi.coros.com" to "Europe",
-                                    "teamsgapi.coros.com" to "Singapore / Asia",
-                                    "teamcnapi.coros.com" to "China"
-                                ).forEach { (reg, label) ->
-                                    FilterChip(
-                                        selected = selectedRegion == reg,
-                                        onClick = { selectedRegion = reg },
-                                        label = {
-                                            Text(
-                                                text = label,
-                                                fontSize = 11.sp,
-                                                fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                        }
+                        CorosRegionDropdown(
+                            selectedRegion = selectedRegion,
+                            onRegionSelected = { selectedRegion = it }
+                        )
                     }
 
                     if (isOAuthMode) {
@@ -3298,37 +3837,10 @@ private fun LapsSettingsScreen(
                     // Region Selector (Direct Login only)
                     if (!isOAuthMode) {
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "COROS Server Region",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        CorosRegionDropdown(
+                            selectedRegion = selectedRegion,
+                            onRegionSelected = { selectedRegion = it }
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            listOf(
-                                "teamapi.coros.com" to "Global / US",
-                                "teameuapi.coros.com" to "Europe",
-                                "teamsgapi.coros.com" to "Singapore / Asia",
-                                "teamcnapi.coros.com" to "China"
-                            ).forEach { (reg, label) ->
-                                FilterChip(
-                                    selected = selectedRegion == reg,
-                                    onClick = { selectedRegion = reg },
-                                    label = {
-                                        Text(
-                                            text = label,
-                                            fontSize = 11.sp,
-                                            fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -3745,7 +4257,7 @@ private fun PlanRaceHubScreen(
     val rc = payload.raceCountdown
     val nw = payload.nextWorkout
 
-    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
+    val pagerState = rememberPagerState(initialPage = initialTab.coerceIn(0, 2)) { 3 }
 
     // Customizer / Plan Generator State
     var selectedDistance by remember {
@@ -3858,12 +4370,16 @@ private fun PlanRaceHubScreen(
         },
         floatingActionButton = {
             AnimatedVisibility(
-                visible = selectedTab != 2,
+                visible = pagerState.currentPage != 2,
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut()
             ) {
                 ExtendedFloatingActionButton(
-                    onClick = { selectedTab = 2 },
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(2)
+                        }
+                    },
                     icon = {
                         Icon(
                             imageVector = rememberEditVector(),
@@ -3890,30 +4406,46 @@ private fun PlanRaceHubScreen(
                 .padding(padding)
         ) {
             // Tabs
-            PrimaryTabRow(selectedTabIndex = selectedTab) {
+            PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
                 Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Schedule", maxLines = 1, fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) }
+                    selected = pagerState.currentPage == 0,
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(0)
+                        }
+                    },
+                    text = { Text("Schedule", maxLines = 1, fontWeight = if (pagerState.currentPage == 0) FontWeight.Bold else FontWeight.Normal) }
                 )
                 Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Race Strategy", maxLines = 1, fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) }
+                    selected = pagerState.currentPage == 1,
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(1)
+                        }
+                    },
+                    text = { Text("Race Strategy", maxLines = 1, fontWeight = if (pagerState.currentPage == 1) FontWeight.Bold else FontWeight.Normal) }
                 )
                 Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    text = { Text("Customizer", maxLines = 1, fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal) }
+                    selected = pagerState.currentPage == 2,
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(2)
+                        }
+                    },
+                    text = { Text("Customizer", maxLines = 1, fontWeight = if (pagerState.currentPage == 2) FontWeight.Bold else FontWeight.Normal) }
                 )
             }
 
-            when (selectedTab) {
-                0 -> {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                when (page) {
+                    0 -> {
                     // Schedule Tab (Multi-Week Collapsible Accordion + Next Workout)
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
+                        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         if (activePlan == null) {
@@ -3941,7 +4473,11 @@ private fun PlanRaceHubScreen(
                                         )
                                         Spacer(modifier = Modifier.height(16.dp))
                                         Button(
-                                            onClick = { selectedTab = 2 },
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    pagerState.animateScrollToPage(2)
+                                                }
+                                            },
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
                                             Text("Build 80/20 Plan")
@@ -4381,6 +4917,8 @@ private fun PlanRaceHubScreen(
                                 )
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(88.dp))
                     }
                 }
                 2 -> {
@@ -4652,7 +5190,9 @@ private fun PlanRaceHubScreen(
                                             "Published $planWeeks-week $displayName plan starting ${SimpleDateFormat("MMM d", Locale.US).format(startCal.time)}!",
                                             Toast.LENGTH_LONG
                                         ).show()
-                                        selectedTab = 0
+                                        coroutineScope.launch {
+                                            pagerState.animateScrollToPage(0)
+                                        }
                                         onPlanPublished()
                                     }
                                 }
@@ -4699,6 +5239,7 @@ private fun PlanRaceHubScreen(
             }
         }
     }
+}
 }
 
 @Composable
@@ -5063,6 +5604,30 @@ private fun rememberCheckVector(): ImageVector = remember {
             lineTo(9.0f, 19.0f)
             lineTo(21.0f, 7.0f)
             lineTo(19.59f, 5.59f)
+            close()
+        }
+    }.build()
+}
+
+@Composable
+private fun rememberChevronRightVector(): ImageVector = remember {
+    ImageVector.Builder(
+        name = "ChevronRight",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.White),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(10.0f, 6.0f)
+            lineTo(8.59f, 7.41f)
+            lineTo(13.17f, 12.0f)
+            lineTo(8.59f, 16.59f)
+            lineTo(10.0f, 18.0f)
+            lineTo(16.0f, 12.0f)
             close()
         }
     }.build()
