@@ -594,7 +594,25 @@ object LapsRepository {
                 )
             } else null
 
-            val rcData = if (corosSchedule != null && corosSchedule.endDayInt > 0) {
+            val isCorosPlanFuture = corosSchedule != null && corosSchedule.endDayInt > 0 && run {
+                val endDay = corosSchedule.endDayInt
+                val endY = endDay / 10000
+                val endM = (endDay % 10000) / 100
+                val endD = endDay % 100
+                val raceTargetCal = Calendar.getInstance().apply {
+                    set(endY, endM - 1, endD, 0, 0, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val todayCal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                raceTargetCal.timeInMillis >= todayCal.timeInMillis
+            }
+
+            val rcData = if (isCorosPlanFuture && corosSchedule != null) {
                 val endDay = corosSchedule.endDayInt
                 val endY = endDay / 10000
                 val endM = (endDay % 10000) / 100
@@ -612,7 +630,12 @@ object LapsRepository {
                 val diffDays = ((raceTargetCal.timeInMillis - todayCal.timeInMillis) / 86400000L).toInt().coerceAtLeast(0)
                 val weeksLeft = (diffDays / 7) + (if (diffDays % 7 > 0) 1 else 0)
 
-                val planName = corosSchedule.planName.trim().ifBlank { "COROS TARGET RACE" }.uppercase()
+                val rawName = corosSchedule.planName.trim()
+                val planName = when {
+                    rawName.isBlank() -> "COROS TARGET RACE"
+                    rawName.matches(Regex("^[Ss][0-9]+$")) -> "COROS TARGET RACE"
+                    else -> rawName.uppercase()
+                }
                 val raceDateStr = "%04d-%02d-%02d".format(endY, endM, endD)
 
                 RaceCountdownData(

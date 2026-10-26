@@ -161,6 +161,29 @@ class CorosApiClient(
                     this.accessToken = token
                     this.userId = uId
 
+                    // Verify that the token actually has access to the user's data on this host
+                    try {
+                        val verifyUrl = "${getBaseUrl()}/activity/query?size=1&pageNumber=1"
+                        val verifyReq = Request.Builder()
+                            .url(verifyUrl)
+                            .get()
+                            .header("accesstoken", token)
+                            .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
+                            .build()
+                        client.newCall(verifyReq).execute().use { vResp ->
+                            val vBody = vResp.body?.string() ?: ""
+                            val vRoot = try { JSONObject(vBody) } catch (_: Exception) { JSONObject() }
+                            val vCode = vRoot.optString("result", vRoot.optString("code", ""))
+                            if (vCode == "1019") {
+                                return Result.failure(IllegalStateException(
+                                    "Your COROS account is authenticated, but your activities are hosted in another region. Please select the Europe or Global region in settings."
+                                ))
+                            }
+                        }
+                    } catch (_: Exception) {
+                        // Allow login to proceed if verification network fails transiently
+                    }
+
                     val zoneData = data.optJSONObject("zoneData") ?: try {
                         val zdStr = data.optString("zoneData")
                         if (zdStr.isNotBlank()) JSONObject(zdStr) else JSONObject()
@@ -280,15 +303,27 @@ class CorosApiClient(
                         val pId = e.optString("planProgramId", e.optString("idInPlan", ""))
                         val prog = progMap[pId]
 
-                        val progName = prog?.optString("name", "COROS Workout") ?: "COROS Workout"
-                        val name = e.optString("name", progName)
+                        val progName = prog?.optString("name", "") ?: ""
+                        val sportData = e.optJSONObject("sportData")
+                        val sportName = sportData?.optString("name", "") ?: ""
+                        val rawName = e.optString("name", "")
+                        val name = when {
+                            rawName.isNotBlank() -> rawName
+                            sportName.isNotBlank() -> sportName
+                            progName.isNotBlank() -> progName
+                            else -> "COROS Workout"
+                        }
+
                         val targetVal = prog?.optDouble("targetValue", 0.0) ?: 0.0
                         val distKm = if (targetVal > 1000.0) {
                             ((targetVal / 100000.0) * 100.0).toInt() / 100.0
                         } else {
-                            val sportData = e.optJSONObject("sportData")
                             val sDist = sportData?.optDouble("distance", 0.0) ?: 0.0
-                            ((sDist / 1000.0) * 100.0).toInt() / 100.0
+                            if (sDist > 10000.0) {
+                                ((sDist / 100000.0) * 100.0).toInt() / 100.0
+                            } else {
+                                ((sDist / 1000.0) * 100.0).toInt() / 100.0
+                            }
                         }
                         val durSec = prog?.optInt("duration", 0) ?: 0
 
