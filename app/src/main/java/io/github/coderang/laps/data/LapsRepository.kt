@@ -158,24 +158,21 @@ object LapsRepository {
     fun getSelectedCalendarId(context: Context): Long {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val saved = prefs.getLong(KEY_CALENDAR_ID, -1L)
-        // If saved is -1 or set to a placeholder testing calendar (45), find the real user training calendar (41)
-        if (saved > 0L && saved != 45L) return saved
+        // If the user has explicitly selected a calendar, always honor it 100%
+        if (saved > 0L) return saved
 
         return try {
             val calendars = CalendarSyncManager.getAvailableCalendars(context)
             val matched = calendars.find { cal ->
-                val name = cal.displayName.lowercase(Locale.US)
-                name.contains("pune") || (name.contains("training") && !name.contains("testing") && !name.contains("laps"))
-            } ?: calendars.find { cal ->
                 val name = cal.displayName.lowercase(Locale.US)
                 name.contains("training") || name.contains("marathon") || name.contains("run")
             }
             if (matched != null) {
                 saveSelectedCalendarId(context, matched.id)
                 matched.id
-            } else if (saved > 0L) saved else -1L
+            } else -1L
         } catch (_: Exception) {
-            if (saved > 0L) saved else -1L
+            -1L
         }
     }
 
@@ -327,7 +324,7 @@ object LapsRepository {
                     context = context,
                     calendarId = calId,
                     startMillis = mondayMillis - (7 * 86400000L),
-                    endMillis = sundayMillis + (60 * 86400000L)
+                    endMillis = sundayMillis + (180 * 86400000L)
                 )
             } else emptyList()
             val gcalPlannedByDate = gcalPlannedList.associateBy { it.dateString }
@@ -776,15 +773,19 @@ object LapsRepository {
                     .trim()
                     .ifBlank { "RACE DAY" }
 
+                val maxWeekInCal = gcalPlannedList.mapNotNull {
+                    Regex("W(\\d+)").find(it.title)?.groupValues?.get(1)?.toIntOrNull()
+                }.maxOrNull() ?: 10
+                val totalWeeks = if (maxWeekInCal > 0) maxWeekInCal else 10
+
                 var currentWeek = 0
                 val thisWeekWorkout = gcalPlannedList.firstOrNull { it.startMillis in mondayMillis..sundayMillis }
                 val weekMatch = if (thisWeekWorkout != null) Regex("W(\\d+)").find(thisWeekWorkout.title) else null
                 if (weekMatch != null) {
                     currentWeek = weekMatch.groupValues[1].toIntOrNull() ?: 0
                 } else {
-                    currentWeek = (10 - (diffDays / 7)).coerceIn(1, 10)
+                    currentWeek = (totalWeeks - (diffDays / 7)).coerceIn(1, totalWeeks)
                 }
-                val totalWeeks = 10
 
                 RaceCountdownData(
                     raceName = cleanRaceTitle.uppercase(),
