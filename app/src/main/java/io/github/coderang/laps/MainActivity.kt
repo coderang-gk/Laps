@@ -22,10 +22,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
@@ -968,6 +972,14 @@ private fun WidgetsGallerySection(
         }
     }
 
+    var previewMode by remember { mutableStateOf("SYSTEM") } // "SYSTEM", "LIGHT", "DARK"
+    val isDarkSystem = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val forcedTheme = when (previewMode) {
+        "LIGHT" -> "LIGHT"
+        "DARK" -> "DARK"
+        else -> if (isDarkSystem) "DARK" else "LIGHT"
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = Modifier
@@ -977,34 +989,82 @@ private fun WidgetsGallerySection(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Expressive Header Hero Banner
         item(span = { GridItemSpan(2) }) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Tap any widget to apply & pin",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "Colors automatically adapt to your device wallpaper & dark/light theme.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                        )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "WIDGETS STUDIO",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Glanceable Metrics",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Preview Theme Selector Pills
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                listOf(
+                                    "SYSTEM" to "Auto",
+                                    "LIGHT" to "☀️ Light",
+                                    "DARK" to "🌙 Dark"
+                                ).forEach { (mode, label) ->
+                                    val isSel = previewMode == mode
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .clickable { previewMode = mode }
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Tap any widget to set active style and pin directly to your home screen. Automatically adapts to wallpaper & theme.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
 
+        // Segmented filter row
         item(span = { GridItemSpan(2) }) {
             val options = listOf("All (12)", "Sculptural (6)", "Data Cards (6)")
             SingleChoiceSegmentedButtonRow(
@@ -1021,7 +1081,7 @@ private fun WidgetsGallerySection(
                         Text(
                             text = label,
                             style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selectedFilter == index) FontWeight.SemiBold else FontWeight.Normal
+                            fontWeight = if (selectedFilter == index) FontWeight.Bold else FontWeight.Normal
                         )
                     }
                 }
@@ -1032,6 +1092,7 @@ private fun WidgetsGallerySection(
             StockPixelWidgetCard(
                 item = item,
                 payload = payload,
+                forcedTheme = forcedTheme,
                 onClick = { onPinWidget(item) }
             )
         }
@@ -2708,11 +2769,17 @@ private fun MetricPod(
 private fun StockPixelWidgetCard(
     item: MainActivity.WidgetCatalogItem,
     payload: LapsPayload,
+    forcedTheme: String? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val currentTheme = if (isDark) "DARK" else "LIGHT"
+    val currentTheme = forcedTheme ?: if (isDark) "DARK" else "LIGHT"
+
+    val isCurrentlyActive = remember(item.slot, item.styleIndex) {
+        LapsRepository.getStyleForTile(context, item.slot) == item.styleIndex
+    }
+
     val bitmap = remember(item.styleIndex, payload, currentTheme) {
         ExpressiveWidgetRenderer.renderTileBitmap(
             context = context,
@@ -2725,13 +2792,30 @@ private fun StockPixelWidgetCard(
         )
     }
 
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val cardScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "widget_card_press"
+    )
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .clickable(onClick = onClick),
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
+            .clip(RoundedCornerShape(28.dp)),
         shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        border = if (isCurrentlyActive) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        onClick = onClick,
+        interactionSource = interactionSource
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             // Widget Preview Well
@@ -2754,6 +2838,36 @@ private fun StockPixelWidgetCard(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit
                     )
+
+                    if (isCurrentlyActive) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = rememberCheckVector(),
+                                    contentDescription = "Active style",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Text(
+                                    text = "ACTIVE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 9.sp
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -2772,7 +2886,7 @@ private fun StockPixelWidgetCard(
                         text = item.title,
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
