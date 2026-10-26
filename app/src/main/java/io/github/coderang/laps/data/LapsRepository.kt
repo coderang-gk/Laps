@@ -1246,6 +1246,7 @@ object LapsRepository {
                 weeklyMileage = WeeklyMileageData(
                     actualKm = actualWkKm,
                     plannedKm = plannedWkKm,
+                    remainingKm = Math.max(0.0, plannedWkKm - actualWkKm),
                     completionPct = completionPct,
                     runsCompleted = runsDone,
                     runsPlanned = if (hasActivePlanThisWeek) daysMatrix.count { it.plannedKm > 0 } else runsDone,

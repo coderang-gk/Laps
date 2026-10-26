@@ -1181,7 +1181,12 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(end = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Surface(
                                             shape = CircleShape,
                                             color = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest
@@ -1205,20 +1210,28 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                                         )
                                     }
 
-                                    Text(
-                                        text = if (isCompleted) {
-                                            if (isPlanActiveThisWeek && day.plannedKm > 0) {
-                                                "${String.format(Locale.US, "%.1f", day.actualKm)} / ${String.format(Locale.US, "%.0f", day.plannedKm)}K · $dayPct%"
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isCompleted) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                                else MaterialTheme.colorScheme.surfaceContainerHighest
+                                    ) {
+                                        Text(
+                                            text = if (isCompleted) {
+                                                if (isPlanActiveThisWeek && day.plannedKm > 0) {
+                                                    "${String.format(Locale.US, "%.1f", day.actualKm)} / ${String.format(Locale.US, "%.0f", day.plannedKm)}K"
+                                                } else {
+                                                    "${String.format(Locale.US, "%.1f", day.actualKm)} km"
+                                                }
                                             } else {
-                                                "${String.format(Locale.US, "%.1f", day.actualKm)} km"
-                                            }
-                                        } else {
-                                            "Upcoming · ${String.format(Locale.US, "%.0f", day.plannedKm)}K"
-                                        },
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                                "${String.format(Locale.US, "%.0f", day.plannedKm)} km"
+                                            },
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = if (isCompleted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                    }
                                 }
 
                                 if (isPlanActiveThisWeek) {
