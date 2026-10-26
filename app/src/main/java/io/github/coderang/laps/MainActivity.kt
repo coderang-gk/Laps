@@ -451,7 +451,11 @@ private fun MainAppScaffold(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (selectedSection == 0) "Training Hub" else "Widgets",
+                        text = when (selectedSection) {
+                            0 -> "Training Hub"
+                            1 -> "Widgets"
+                            else -> "Watch Face Studio"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1
@@ -530,6 +534,23 @@ private fun MainAppScaffold(
                         )
                     }
                 )
+                NavigationBarItem(
+                    selected = selectedSection == 2,
+                    onClick = { onSectionSelected(2) },
+                    icon = {
+                        Icon(
+                            imageVector = rememberWatchVector(),
+                            contentDescription = "Watch Face",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = "Watch Face",
+                            fontWeight = if (selectedSection == 2) FontWeight.SemiBold else FontWeight.Normal
+                        )
+                    }
+                )
             }
         }
     ) { innerPadding ->
@@ -562,29 +583,37 @@ private fun MainAppScaffold(
             },
             label = "section_nav_transition"
         ) { section ->
-            if (section == 0) {
-                TrainingHubSection(
-                    payload = payload,
-                    isSyncing = isSyncing,
-                    contentPadding = innerPadding,
-                    onRunClicked = onRunClicked,
-                    onResolveMissedWorkout = onResolveMissedWorkout,
-                    isResolvingMissed = isResolvingMissed,
-                    onConnectAccountClicked = onConnectAccountClicked,
-                    onPlanClicked = onPlanClicked,
-                    onWorkoutClicked = onWorkoutClicked,
-                    onRaceClicked = onRaceClicked,
-                    onBrowseWidgetsClicked = { onSectionSelected(1) }
-                )
-            } else {
-                WidgetsGallerySection(
-                    payload = payload,
-                    selectedFilter = selectedFilter,
-                    onFilterSelected = onFilterSelected,
-                    catalog = catalog,
-                    contentPadding = innerPadding,
-                    onPinWidget = onPinWidget
-                )
+            when (section) {
+                0 -> {
+                    TrainingHubSection(
+                        payload = payload,
+                        isSyncing = isSyncing,
+                        contentPadding = innerPadding,
+                        onRunClicked = onRunClicked,
+                        onResolveMissedWorkout = onResolveMissedWorkout,
+                        isResolvingMissed = isResolvingMissed,
+                        onConnectAccountClicked = onConnectAccountClicked,
+                        onPlanClicked = onPlanClicked,
+                        onWorkoutClicked = onWorkoutClicked,
+                        onRaceClicked = onRaceClicked,
+                        onBrowseWidgetsClicked = { onSectionSelected(1) }
+                    )
+                }
+                1 -> {
+                    WidgetsGallerySection(
+                        payload = payload,
+                        selectedFilter = selectedFilter,
+                        onFilterSelected = onFilterSelected,
+                        catalog = catalog,
+                        contentPadding = innerPadding,
+                        onPinWidget = onPinWidget
+                    )
+                }
+                else -> {
+                    io.github.coderang.laps.watchface.WatchFaceStudioScreen(
+                        modifier = Modifier.padding(innerPadding)
+                    )
+                }
             }
         }
     }
@@ -5351,6 +5380,41 @@ private fun rememberWidgetsVector(): ImageVector = remember {
             lineTo(16.66f, 13.0f)
             lineToRelative(5.66f, -5.66f)
             lineToRelative(-5.66f, -5.65f)
+            close()
+        }
+    }.build()
+}
+
+@Composable
+private fun rememberWatchVector(): ImageVector = remember {
+    ImageVector.Builder(
+        name = "Watch",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.White),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(20.0f, 12.0f)
+            curveToRelative(0.0f, -2.54f, -1.19f, -4.81f, -3.05f, -6.27f)
+            lineTo(16.0f, 2.0f)
+            horizontalLineTo(8.0f)
+            lineTo(7.05f, 5.73f)
+            curveTo(5.19f, 7.19f, 4.0f, 9.45f, 4.0f, 12.0f)
+            reflectiveCurveToRelative(1.19f, 4.81f, 3.05f, 6.27f)
+            lineTo(8.0f, 22.0f)
+            horizontalLineToRelative(8.0f)
+            lineToRelative(0.95f, -3.73f)
+            curveToRelative(1.86f, -1.46f, 3.05f, -3.73f, 3.05f, -6.27f)
+            close()
+            moveTo(6.0f, 12.0f)
+            curveToRelative(0.0f, -3.31f, 2.69f, -6.0f, 6.0f, -6.0f)
+            reflectiveCurveToRelative(6.0f, 2.69f, 6.0f, 6.0f)
+            reflectiveCurveToRelative(-2.69f, 6.0f, -6.0f, 6.0f)
+            reflectiveCurveToRelative(-6.0f, -2.69f, -6.0f, -6.0f)
             close()
         }
     }.build()
