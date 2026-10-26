@@ -5,7 +5,7 @@
     <string name="widget_training_load_label">Laps · Training Load</string>
     <string name="widget_training_load_desc">EvoLab training load, fatigue index, and readiness.</string>
     <string name="widget_next_workout_label">Laps · Next Workout</string>
-    <string name="widget_next_workout_desc">Upcoming scheduled workout and Google Calendar training runs.</string>
+    <string name="widget_next_workout_desc">Upcoming scheduled workout and device calendar training runs.</string>
     <string name="widget_zone_spectrum_label">Laps · 80/20 Zone Balance</string>
     <string name="widget_zone_spectrum_desc">Aerobic base vs lactate threshold volume distribution.</string>
     <string name="widget_race_countdown_label">Laps · Race Countdown</string>

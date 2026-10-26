@@ -76,7 +76,8 @@ import kotlinx.coroutines.withContext
 enum class AppScreen {
     MAIN,
     SETTINGS,
-    PLAN_RACE_HUB
+    PLAN_RACE_HUB,
+    ONBOARDING
 }
 
 class MainActivity : ComponentActivity() {
@@ -156,10 +157,14 @@ class MainActivity : ComponentActivity() {
             var isSyncing by remember { mutableStateOf(false) }
             var selectedSection by remember { mutableIntStateOf(0) } // 0 = Training Hub, 1 = Widgets
             var selectedFilter by remember { mutableIntStateOf(0) } // 0 = All, 1 = Sculptural, 2 = Cards
-            var currentScreen by remember { mutableStateOf(AppScreen.MAIN) }
-            var initialPlanHubTab by remember { mutableIntStateOf(0) } // 0 = Schedule, 1 = Strategy, 2 = Customizer
             val hasCredentials = remember(trigger) { LapsRepository.hasCredentials(context) }
-            var showOnboarding by remember(trigger) { mutableStateOf(!hasCredentials && !LapsRepository.isSetupCompleted(context)) }
+            var currentScreen by remember(trigger) {
+                mutableStateOf(
+                    if (!hasCredentials && !LapsRepository.isSetupCompleted(context)) AppScreen.ONBOARDING
+                    else AppScreen.MAIN
+                )
+            }
+            var initialPlanHubTab by remember { mutableIntStateOf(0) } // 0 = Schedule, 1 = Strategy, 2 = Customizer
             var isResolvingMissed by remember { mutableStateOf(false) }
             var selectedRunForDetail by remember {
                 mutableStateOf(if (shouldOpenRunDetailFromIntent) payload.lastRun else null)
@@ -230,9 +235,9 @@ class MainActivity : ComponentActivity() {
                                         LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context)
 
                                         val msg = if (action == "SHIFT") {
-                                            "Shifted to ${targetDate.ifBlank { "upcoming day" }} in Google Calendar"
+                                            "Shifted to ${targetDate.ifBlank { "upcoming day" }} in Device Calendar"
                                         } else {
-                                            "Workout marked [SKIPPED] in Google Calendar"
+                                            "Workout marked [SKIPPED] in Device Calendar"
                                         }
                                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                     }
@@ -251,7 +256,7 @@ class MainActivity : ComponentActivity() {
                                         payload = LapsRepository.getCachedPayload(context)
                                         isSyncing = false
                                         res.onSuccess {
-                                            Toast.makeText(context, "Synced directly with COROS & Google Calendar", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Synced directly with COROS & Device Calendar", Toast.LENGTH_SHORT).show()
                                         }.onFailure { err ->
                                             Toast.makeText(context, "Using local cache: ${err.message}", Toast.LENGTH_SHORT).show()
                                         }
@@ -271,29 +276,13 @@ class MainActivity : ComponentActivity() {
                                 currentScreen = AppScreen.PLAN_RACE_HUB
                             },
                             onSettingsClicked = { currentScreen = AppScreen.SETTINGS },
-                            onConnectAccountClicked = { currentScreen = AppScreen.SETTINGS },
+                            onConnectAccountClicked = { currentScreen = AppScreen.ONBOARDING },
                             onPinWidget = { item ->
                                 LapsRepository.setStyleForTile(context, item.slot, item.styleIndex)
                                 LapsWidgetUpdateHelper.renderAllFromCache(context)
                                 pinWidgetToLauncher(item)
                             }
                         )
-
-                        if (showOnboarding) {
-                            LapsOnboardingDialog(
-                                onDismiss = { showOnboarding = false },
-                                onConnected = {
-                                    showOnboarding = false
-                                    isSyncing = true
-                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
-                                        runOnUiThread {
-                                            payload = LapsRepository.getCachedPayload(context)
-                                            isSyncing = false
-                                        }
-                                    }
-                                }
-                            )
-                        }
 
                         selectedRunForDetail?.let { run ->
                             RunDetailModalBottomSheet(
@@ -302,12 +291,34 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                    AppScreen.ONBOARDING -> {
+                        LapsOnboardingScreen(
+                            onConnected = {
+                                currentScreen = AppScreen.MAIN
+                                isSyncing = true
+                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
+                                    runOnUiThread {
+                                        payload = LapsRepository.getCachedPayload(context)
+                                        isSyncing = false
+                                    }
+                                }
+                            },
+                            onExploreDemo = {
+                                LapsRepository.setSetupCompleted(context, true)
+                                currentScreen = AppScreen.MAIN
+                            }
+                        )
+                    }
                     AppScreen.SETTINGS -> {
                         LapsSettingsScreen(
                             payload = payload,
                             onNavigateBack = { currentScreen = AppScreen.MAIN },
                             onSaved = {
-                                currentScreen = AppScreen.MAIN
+                                if (!LapsRepository.hasCredentials(context)) {
+                                    currentScreen = AppScreen.ONBOARDING
+                                } else {
+                                    currentScreen = AppScreen.MAIN
+                                }
                                 isSyncing = true
                                 LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
                                     runOnUiThread {
@@ -2417,11 +2428,91 @@ private fun LapsAppLogo(
     )
 }
 
+@Composable
+private fun AuthMethodSegmentedTabs(
+    isOAuthMode: Boolean,
+    onSelectOAuth: () -> Unit,
+    onSelectDirect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // OAuth Tab (50% equal width, centered)
+            Surface(
+                onClick = onSelectOAuth,
+                shape = RoundedCornerShape(10.dp),
+                color = if (isOAuthMode) MaterialTheme.colorScheme.primary else Color.Transparent,
+                contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "OAuth",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isOAuthMode) FontWeight.Bold else FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (isOAuthMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
+                    ) {
+                        Text(
+                            text = "RECOMMENDED",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.ExtraBold),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            // Direct Login Tab (50% equal width, centered)
+            Surface(
+                onClick = onSelectDirect,
+                shape = RoundedCornerShape(10.dp),
+                color = if (!isOAuthMode) MaterialTheme.colorScheme.primary else Color.Transparent,
+                contentColor = if (!isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Direct Login",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (!isOAuthMode) FontWeight.Bold else FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LapsOnboardingDialog(
-    onDismiss: () -> Unit,
-    onConnected: () -> Unit
+private fun LapsOnboardingScreen(
+    onConnected: () -> Unit,
+    onExploreDemo: () -> Unit
 ) {
     val context = LocalContext.current
     var isOAuthMode by remember { mutableStateOf(true) }
@@ -2438,440 +2529,461 @@ private fun LapsOnboardingDialog(
     var calendarExpanded by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
-    AlertDialog(
-        onDismissRequest = { /* Modal: require explicit choice */ },
-        title = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                LapsAppLogo(modifier = Modifier.size(64.dp))
-                Spacer(modifier = Modifier.height(12.dp))
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {},
+                actions = {
+                    TextButton(
+                        onClick = onExploreDemo,
+                        enabled = !isLoggingIn
+                    ) {
+                        Text("Demo Mode", fontWeight = FontWeight.SemiBold)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header
+            LapsAppLogo(modifier = Modifier.size(72.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = "Welcome to Laps",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Standalone COROS & Google Calendar companion",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "Athletic Command Center & Device Calendar Companion",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
                 )
             }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+
+            // Privacy Shield Card
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = rememberShieldVector(),
-                                    contentDescription = "Privacy Shield",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        Column {
-                            Text(
-                                text = "Zero Cloud • On-Device Sandboxing",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "Tokens and credentials stay 100% inside your device sandbox. Connect password-free via official COROS OAuth / MCP.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                // Auth Method Tabs
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    FilledTonalButton(
-                        onClick = { isOAuthMode = true; errorMessage = null },
-                        modifier = Modifier.weight(1.1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                        )
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(38.dp)
                     ) {
-                        Text("OAuth (Recommended)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-                    }
-                    FilledTonalButton(
-                        onClick = { isOAuthMode = false; errorMessage = null },
-                        modifier = Modifier.weight(0.9f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (!isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                            contentColor = if (!isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Text("Direct Login", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-                    }
-                }
-
-                // Region Selector (Direct Login only)
-                if (!isOAuthMode) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "COROS Server Region",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf(
-                            "teamapi.coros.com" to "Global / US",
-                            "teameuapi.coros.com" to "Europe",
-                            "teamsgapi.coros.com" to "Singapore / Asia",
-                            "teamcnapi.coros.com" to "China"
-                        ).forEach { (reg, label) ->
-                            FilterChip(
-                                selected = selectedRegion == reg,
-                                onClick = { selectedRegion = reg },
-                                label = {
-                                    Text(
-                                        text = label,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                modifier = Modifier.weight(1f)
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = rememberShieldVector(),
+                                contentDescription = "Privacy Shield",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                if (isOAuthMode) {
-                    Text(
-                        text = "Official Web Sign-In",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Connect password-free via official COROS OAuth. Your browser opens to COROS's official sign-in page.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = {
-                            isLoggingIn = true
-                            errorMessage = null
-                            coroutineScope.launch {
-                                val res = io.github.coderang.laps.coros.CorosOAuthManager.authenticate(context, selectedRegion)
-                                if (res.isFailure) {
-                                    withContext(Dispatchers.Main) {
-                                        isLoggingIn = false
-                                        val err = res.exceptionOrNull()
-                                        val msg = err?.message ?: err?.javaClass?.simpleName ?: "OAuth flow failed"
-                                        android.util.Log.e("LapsAuth", "OAuth failed: $msg", err)
-                                        errorMessage = "OAuth failed: $msg"
-                                        Toast.makeText(context, "OAuth failed: $msg", Toast.LENGTH_LONG).show()
-                                    }
-                                    return@launch
-                                }
-
-                                val tokenStr = res.getOrThrow()
-                                android.util.Log.i("LapsAuth", "Verifying OAuth token on background IO dispatcher...")
-                                val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
-                                val authRes = withContext(Dispatchers.IO) {
-                                    client.authenticateWithToken(tokenStr)
-                                }
-
-                                withContext(Dispatchers.Main) {
-                                    isLoggingIn = false
-                                    authRes.onSuccess {
-                                        token = tokenStr
-                                        android.util.Log.i("LapsAuth", "COROS OAuth verification successful!")
-                                        LapsRepository.saveCorosToken(context, tokenStr, region = selectedRegion)
-                                        LapsRepository.saveCorosRegion(context, selectedRegion)
-                                        LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
-                                        LapsRepository.setSetupCompleted(context, true)
-                                        Toast.makeText(context, "Connected via OAuth!", Toast.LENGTH_SHORT).show()
-                                        onConnected()
-                                    }.onFailure { err ->
-                                        val msg = err.message ?: err.javaClass.simpleName
-                                        android.util.Log.e("LapsAuth", "Token verification error: $msg", err)
-                                        errorMessage = "Token verification error: $msg"
-                                        Toast.makeText(context, "Verification error: $msg", Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = !isLoggingIn
-                    ) {
-                        Text("Sign In with Browser", fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = token,
-                        onValueChange = { token = it; errorMessage = null },
-                        label = { Text("Or paste Access Token manually") },
-                        placeholder = { Text("Bearer eyJhbGci...") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                } else {
-                    Text(
-                        text = "Direct COROS Training Hub Login",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Direct on-device authentication with teamapi.coros.com. Credentials stay encrypted strictly in your device sandbox.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it; errorMessage = null },
-                        label = { Text("COROS Email") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it; errorMessage = null },
-                        label = { Text("COROS Password") },
-                        singleLine = true,
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Text(if (passwordVisible) "Hide" else "Show", fontSize = 12.sp)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Google Calendar (Optional)",
+                            text = "Zero Cloud • On-Device Sandboxing",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Tokens and credentials stay 100% inside your device sandbox. Connect password-free via official COROS OAuth.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // COROS Account Card
+            OutlinedCard(
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "COROS ACCOUNT INTEGRATION",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    AuthMethodSegmentedTabs(
+                        isOAuthMode = isOAuthMode,
+                        onSelectOAuth = { isOAuthMode = true; errorMessage = null },
+                        onSelectDirect = { isOAuthMode = false; errorMessage = null }
+                    )
+
+                    // Region Selector (Direct Login only)
+                    if (!isOAuthMode) {
+                        Column {
+                            Text(
+                                text = "COROS Server Region",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "teamapi.coros.com" to "Global / US",
+                                    "teameuapi.coros.com" to "Europe",
+                                    "teamsgapi.coros.com" to "Singapore / Asia",
+                                    "teamcnapi.coros.com" to "China"
+                                ).forEach { (reg, label) ->
+                                    FilterChip(
+                                        selected = selectedRegion == reg,
+                                        onClick = { selectedRegion = reg },
+                                        label = {
+                                            Text(
+                                                text = label,
+                                                fontSize = 11.sp,
+                                                fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (isOAuthMode) {
+                        Text(
+                            text = "Official Web Sign-In",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Only needed for scheduled workouts. Choose 'None (Metrics Only)' if you just want widgets.",
+                            text = "Connect password-free via official COROS OAuth. Your browser opens to COROS's official sign-in page.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                    IconButton(
-                        onClick = {
-                            CalendarSyncManager.requestSync(context)
-                            calendars = CalendarSyncManager.getAvailableCalendars(context)
-                            Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = rememberRefreshVector(),
-                            contentDescription = "Refresh Calendars",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val selectedCal = calendars.find { it.id == selectedCalendarId }
-                val selectedCalLabel = when {
-                    selectedCalendarId == -1L -> "None (Metrics Only — Widgets & Live Sync)"
-                    selectedCal != null -> "${selectedCal.displayName} (${selectedCal.accountName})"
-                    else -> "None (Metrics Only — Widgets & Live Sync)"
-                }
-
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedCard(
-                        onClick = {
-                            calendars = CalendarSyncManager.getAvailableCalendars(context)
-                            calendarExpanded = true
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = selectedCalLabel,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Icon(
-                                imageVector = rememberArrowDownVector(),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = calendarExpanded,
-                        onDismissRequest = { calendarExpanded = false },
-                        modifier = Modifier
-                            .heightIn(max = 280.dp)
-                            .widthIn(max = 320.dp)
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    Text(
-                                        text = "None (Metrics Only — Widgets & Live Sync)",
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "No training plan. Connect purely for COROS metrics widgets.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            },
+                        Button(
                             onClick = {
-                                selectedCalendarId = -1L
-                                calendarExpanded = false
-                            }
-                        )
-                        calendars.forEach { cal ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text(
-                                            text = cal.displayName,
-                                            fontWeight = FontWeight.Medium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = cal.accountName,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                isLoggingIn = true
+                                errorMessage = null
+                                coroutineScope.launch {
+                                    val res = io.github.coderang.laps.coros.CorosOAuthManager.authenticate(context, selectedRegion)
+                                    if (res.isFailure) {
+                                        withContext(Dispatchers.Main) {
+                                            isLoggingIn = false
+                                            val err = res.exceptionOrNull()
+                                            val msg = err?.message ?: err?.javaClass?.simpleName ?: "OAuth flow failed"
+                                            android.util.Log.e("LapsAuth", "OAuth failed: $msg", err)
+                                            errorMessage = "OAuth failed: $msg"
+                                            Toast.makeText(context, "OAuth failed: $msg", Toast.LENGTH_LONG).show()
+                                        }
+                                        return@launch
                                     }
-                                },
-                                onClick = {
-                                    selectedCalendarId = cal.id
-                                    calendarExpanded = false
-                                }
-                            )
-                        }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = rememberRefreshVector(),
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Refresh Calendars from Device",
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "Pulls newly created Google or local calendars",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+
+                                    val tokenStr = res.getOrThrow()
+                                    android.util.Log.i("LapsAuth", "Verifying OAuth token on background IO dispatcher...")
+                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
+                                    val authRes = withContext(Dispatchers.IO) {
+                                        client.authenticateWithToken(tokenStr)
+                                    }
+
+                                    withContext(Dispatchers.Main) {
+                                        isLoggingIn = false
+                                        authRes.onSuccess {
+                                            token = tokenStr
+                                            android.util.Log.i("LapsAuth", "COROS OAuth verification successful!")
+                                            LapsRepository.saveCorosToken(context, tokenStr, region = selectedRegion)
+                                            LapsRepository.saveCorosRegion(context, selectedRegion)
+                                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                            LapsRepository.setSetupCompleted(context, true)
+                                            Toast.makeText(context, "Connected via OAuth!", Toast.LENGTH_SHORT).show()
+                                            onConnected()
+                                        }.onFailure { err ->
+                                            val msg = err.message ?: err.javaClass.simpleName
+                                            android.util.Log.e("LapsAuth", "Token verification error: $msg", err)
+                                            errorMessage = "Token verification error: $msg"
+                                            Toast.makeText(context, "Verification error: $msg", Toast.LENGTH_LONG).show()
+                                        }
                                     }
                                 }
                             },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            enabled = !isLoggingIn
+                        ) {
+                            if (isLoggingIn) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Text("Sign In with Browser", fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = token,
+                            onValueChange = { token = it; errorMessage = null },
+                            label = { Text("Or paste Access Token manually") },
+                            placeholder = { Text("Bearer eyJhbGci...") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text(
+                            text = "Direct COROS Training Hub Login",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Direct on-device authentication with teamapi.coros.com. Credentials stay encrypted strictly in your device sandbox.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedTextField(
+                            value = email,
+                            onValueChange = { email = it; errorMessage = null },
+                            label = { Text("COROS Email") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it; errorMessage = null },
+                            label = { Text("COROS Password") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                TextButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Text(if (passwordVisible) "Hide" else "Show", fontSize = 12.sp)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            // Target Calendar Card
+            OutlinedCard(
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "TARGET CALENDAR (OPTIONAL)",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(
                             onClick = {
                                 CalendarSyncManager.requestSync(context)
                                 calendars = CalendarSyncManager.getAvailableCalendars(context)
                                 Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
                             }
-                        )
+                        ) {
+                            Icon(
+                                imageVector = rememberRefreshVector(),
+                                contentDescription = "Refresh Calendars",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Workouts generated by Laps publish directly to your chosen device calendar for seamless watch and phone sync.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    val selectedCal = calendars.find { it.id == selectedCalendarId }
+                    val selectedCalLabel = when {
+                        selectedCalendarId == -1L -> "None (Metrics Only — Widgets & Live Sync)"
+                        selectedCal != null -> "${selectedCal.displayName} (${selectedCal.accountName})"
+                        else -> "None (Metrics Only — Widgets & Live Sync)"
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedCard(
+                            onClick = {
+                                calendars = CalendarSyncManager.getAvailableCalendars(context)
+                                calendarExpanded = true
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = selectedCalLabel,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = rememberArrowDownVector(),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = calendarExpanded,
+                            onDismissRequest = { calendarExpanded = false },
+                            modifier = Modifier
+                                .heightIn(max = 280.dp)
+                                .widthIn(max = 320.dp)
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            text = "None (Metrics Only — Widgets & Live Sync)",
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "No training plan. Connect purely for COROS metrics widgets.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    selectedCalendarId = -1L
+                                    calendarExpanded = false
+                                }
+                            )
+                            calendars.forEach { cal ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            Text(
+                                                text = cal.displayName,
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = cal.accountName,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedCalendarId = cal.id
+                                        calendarExpanded = false
+                                    }
+                                )
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = rememberRefreshVector(),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Refresh Calendars from Device",
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "Pulls newly created device or synced calendars",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    CalendarSyncManager.requestSync(context)
+                                    calendars = CalendarSyncManager.getAvailableCalendars(context)
+                                    Toast.makeText(context, "Refreshed calendars from device", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
                     }
                 }
-
-                if (errorMessage != null) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = errorMessage ?: "",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
             }
-        },
-        confirmButton = {
+
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage ?: "",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // Confirm / Direct Sign-in Button
             Button(
                 onClick = {
                     if (isOAuthMode) {
                         if (token.isBlank()) {
-                            errorMessage = "Please paste your COROS Bearer token or connect in browser."
+                            errorMessage = "Please paste your COROS Bearer token or sign in via browser above."
                             return@Button
                         }
                         isLoggingIn = true
@@ -2919,6 +3031,8 @@ private fun LapsOnboardingDialog(
                         }
                     }
                 },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(12.dp),
                 enabled = !isLoggingIn
             ) {
                 if (isLoggingIn) {
@@ -2928,22 +3042,22 @@ private fun LapsOnboardingDialog(
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Text("Connect & Sync")
+                    Text("Connect & Sync", fontWeight = FontWeight.Bold)
                 }
             }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    LapsRepository.setSetupCompleted(context, true)
-                    onDismiss()
-                },
+
+            OutlinedButton(
+                onClick = onExploreDemo,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(12.dp),
                 enabled = !isLoggingIn
             ) {
-                Text("Use Widgets (Demo Mode)")
+                Text("Explore in Demo Mode (Try Widgets)", fontWeight = FontWeight.Medium)
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
-    )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -3137,33 +3251,11 @@ private fun LapsSettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        FilledTonalButton(
-                            onClick = { isOAuthMode = true },
-                            modifier = Modifier.weight(1.1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = if (isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                            )
-                        ) {
-                            Text("OAuth (Recommended)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-                        }
-                        FilledTonalButton(
-                            onClick = { isOAuthMode = false },
-                            modifier = Modifier.weight(0.9f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (!isOAuthMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
-                                contentColor = if (!isOAuthMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                            )
-                        ) {
-                            Text("Direct Login", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-                        }
-                    }
+                    AuthMethodSegmentedTabs(
+                        isOAuthMode = isOAuthMode,
+                        onSelectOAuth = { isOAuthMode = true },
+                        onSelectDirect = { isOAuthMode = false }
+                    )
 
                     // Region Selector (Direct Login only)
                     if (!isOAuthMode) {
@@ -3293,7 +3385,7 @@ private fun LapsSettingsScreen(
                 }
             }
 
-            // Google Calendar Card
+            // Device Calendar Card
             OutlinedCard(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -3305,7 +3397,7 @@ private fun LapsSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "GOOGLE CALENDAR SYNC",
+                            text = "DEVICE CALENDAR SYNC",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -3326,7 +3418,7 @@ private fun LapsSettingsScreen(
                         }
                     }
                     Text(
-                        text = "Workouts generated by Laps publish directly to your Android device calendar for watch and phone sync.",
+                        text = "Workouts generated by Laps publish directly to your chosen device calendar for seamless watch and phone sync.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -3568,7 +3660,7 @@ private fun PlanRaceHubScreen(
     val hasCalendar = selectedCalId > 0L
     val coroutineScope = rememberCoroutineScope()
 
-    // Multi-week workouts for display (from real Google Calendar events first, then generator fallback)
+    // Multi-week workouts for display (from real device calendar events first, then generator fallback)
     val workoutsByWeek = remember(activePlan, selectedCalId) {
         if (activePlan == null) {
             emptyMap<Int, List<PlanGenerator.PlanWorkoutItem>>()
@@ -4189,14 +4281,14 @@ private fun PlanRaceHubScreen(
                             ) {
                                 Column(modifier = Modifier.padding(14.dp)) {
                                     Text(
-                                        text = "No Google Calendar Selected",
+                                        text = "No Device Calendar Selected",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "You are currently in Metrics-Only mode. To publish workouts to your device, select a Google Calendar in Settings.",
+                                        text = "You are currently in Metrics-Only mode. To publish workouts to your device, select a Device Calendar in Settings.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onErrorContainer
                                     )
@@ -4212,7 +4304,7 @@ private fun PlanRaceHubScreen(
                         }
 
                         Text(
-                            text = "Build a scientifically periodized 80/20 plan tailored to your COROS threshold pace & heart rate zones, published directly to your Google Calendar.",
+                            text = "Build a scientifically periodized 80/20 plan tailored to your COROS threshold pace & heart rate zones, published directly to your Device Calendar.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -4400,7 +4492,7 @@ private fun PlanRaceHubScreen(
                         Button(
                             onClick = {
                                 if (!hasCalendar) {
-                                    Toast.makeText(context, "Cannot publish: No Google Calendar selected", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Cannot publish: No Device Calendar selected", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
                                 isPublishing = true
