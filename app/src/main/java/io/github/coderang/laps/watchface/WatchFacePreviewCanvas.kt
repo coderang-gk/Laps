@@ -317,7 +317,7 @@ private fun DrawScope.drawPixelBubblyWatchFace(
         yOff: Float,
         angleDeg: Float
     ) {
-        val textSizePx = radius * 0.88f
+        val textSizePx = radius * 0.74f
         val canvas = drawContext.canvas.nativeCanvas
         canvas.save()
         canvas.translate(center.x + xOff, center.y + yOff)
@@ -330,7 +330,7 @@ private fun DrawScope.drawPixelBubblyWatchFace(
             this.textSize = textSizePx
             this.textAlign = android.graphics.Paint.Align.CENTER
             this.style = android.graphics.Paint.Style.STROKE
-            this.strokeWidth = radius * 0.052f
+            this.strokeWidth = radius * 0.034f
             this.strokeJoin = android.graphics.Paint.Join.ROUND
             this.color = config.palette.backgroundColor.toArgb()
         }
@@ -354,21 +354,21 @@ private fun DrawScope.drawPixelBubblyWatchFace(
         canvas.restore()
     }
 
-    // Tight interlocking offset spacing
-    val xSpread = radius * 0.17f
-    val ySpread = radius * 0.18f
+    // Balanced interlocking offset spacing with comfortable breathing room
+    val xSpread = radius * 0.235f
+    val ySpread = radius * 0.235f
 
-    // Layer 1: Top-Left (d0, Pink) tilted -9°
-    drawInterlockingDigit(d0, c1, -xSpread - (radius * 0.02f), -ySpread, -9f)
+    // Layer 1: Top-Left (d0, Pink) tilted -6°
+    drawInterlockingDigit(d0, c1, -xSpread, -ySpread, -6f)
 
-    // Layer 2: Top-Right (d1, Blue) tilted +12° (overlaps on top of d0)
-    drawInterlockingDigit(d1, c2, xSpread + (radius * 0.02f), -ySpread - (radius * 0.01f), 12f)
+    // Layer 2: Top-Right (d1, Blue) tilted +8°
+    drawInterlockingDigit(d1, c2, xSpread, -ySpread, 8f)
 
-    // Layer 3: Bottom-Left (d2, White) tilted +7° (overlaps on top of d0)
-    drawInterlockingDigit(d2, c3, -xSpread, ySpread, 7f)
+    // Layer 3: Bottom-Left (d2, White) tilted +5°
+    drawInterlockingDigit(d2, c3, -xSpread, ySpread, 5f)
 
-    // Layer 4: Bottom-Right (d3, Purple) tilted -8° (overlaps on top of d1 and d2)
-    drawInterlockingDigit(d3, c4, xSpread, ySpread - (radius * 0.01f), -8f)
+    // Layer 4: Bottom-Right (d3, Purple) tilted -6°
+    drawInterlockingDigit(d3, c4, xSpread, ySpread, -6f)
 }
 
 /**
