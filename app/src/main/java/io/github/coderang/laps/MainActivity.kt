@@ -2325,21 +2325,56 @@ private fun LapsOnboardingDialog(
 
                 if (isOAuthMode) {
                     Text(
-                        text = "COROS MCP Bearer Token (Advanced)",
+                        text = "Official COROS Web Sign-In",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Paste your Bearer token from COROS Model Context Protocol (mcp.coros.com).",
+                        text = "Connect password-free via official COROS OAuth. Your browser opens to COROS's official sign-in page.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            isLoggingIn = true
+                            errorMessage = null
+                            coroutineScope.launch {
+                                val res = io.github.coderang.laps.coros.CorosOAuthManager.authenticate(context, selectedRegion)
+                                withContext(Dispatchers.Main) {
+                                    isLoggingIn = false
+                                    res.onSuccess { tokenStr ->
+                                        token = tokenStr
+                                        val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
+                                        val authRes = client.authenticateWithToken(tokenStr)
+                                        authRes.onSuccess {
+                                            LapsRepository.saveCorosToken(context, tokenStr, region = selectedRegion)
+                                            LapsRepository.saveCorosRegion(context, selectedRegion)
+                                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                            LapsRepository.setSetupCompleted(context, true)
+                                            Toast.makeText(context, "Connected via COROS OAuth!", Toast.LENGTH_SHORT).show()
+                                            onConnected()
+                                        }.onFailure { err ->
+                                            errorMessage = "Token verification error: ${err.message}"
+                                        }
+                                    }.onFailure { err ->
+                                        errorMessage = "OAuth failed: ${err.message}"
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !isLoggingIn
+                    ) {
+                        Text("Sign In with COROS (Browser)", fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
                         value = token,
                         onValueChange = { token = it; errorMessage = null },
-                        label = { Text("COROS MCP Bearer Token") },
+                        label = { Text("Or paste MCP Bearer Token manually") },
                         placeholder = { Text("Bearer eyJhbGci...") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -2895,10 +2930,46 @@ private fun LapsSettingsScreen(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     if (isOAuthMode) {
+                        Button(
+                            onClick = {
+                                if (isSaving) return@Button
+                                isSaving = true
+                                coroutineScope.launch {
+                                    val res = io.github.coderang.laps.coros.CorosOAuthManager.authenticate(context, selectedRegion)
+                                    withContext(Dispatchers.Main) {
+                                        isSaving = false
+                                        res.onSuccess { tokenStr ->
+                                            token = tokenStr
+                                            val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
+                                            val authRes = client.authenticateWithToken(tokenStr)
+                                            authRes.onSuccess {
+                                                LapsRepository.saveCorosToken(context, tokenStr, region = selectedRegion)
+                                                LapsRepository.saveCorosRegion(context, selectedRegion)
+                                                LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                                LapsRepository.saveGeminiKey(context, geminiKey)
+                                                LapsRepository.setSetupCompleted(context, true)
+                                                Toast.makeText(context, "Connected via COROS OAuth!", Toast.LENGTH_SHORT).show()
+                                                onSaved()
+                                            }.onFailure { err ->
+                                                Toast.makeText(context, "Verification error: ${err.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }.onFailure { err ->
+                                            Toast.makeText(context, "OAuth failed: ${err.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            enabled = !isSaving
+                        ) {
+                            Text("Sign In with COROS (Browser)", fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
                         OutlinedTextField(
                             value = token,
                             onValueChange = { token = it },
-                            label = { Text("COROS MCP Bearer Token") },
+                            label = { Text("Or paste MCP Bearer Token manually") },
                             placeholder = { Text("Bearer eyJhbGci...") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
