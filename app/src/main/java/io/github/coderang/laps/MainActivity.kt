@@ -235,7 +235,8 @@ class MainActivity : ComponentActivity() {
                                 LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
                                     runOnUiThread {
                                         val (email, pwd) = LapsRepository.getCorosCredentials(context)
-                                        if (email.isBlank() || pwd.isBlank()) {
+                                        val token = LapsRepository.getCorosToken(context)
+                                        if (token.isBlank() && (email.isBlank() || pwd.isBlank())) {
                                             LapsRepository.resetSamplePayload()
                                         }
                                         payload = LapsRepository.getCachedPayload()
@@ -2342,24 +2343,41 @@ private fun LapsOnboardingDialog(
                             errorMessage = null
                             coroutineScope.launch {
                                 val res = io.github.coderang.laps.coros.CorosOAuthManager.authenticate(context, selectedRegion)
+                                if (res.isFailure) {
+                                    withContext(Dispatchers.Main) {
+                                        isLoggingIn = false
+                                        val err = res.exceptionOrNull()
+                                        val msg = err?.message ?: err?.javaClass?.simpleName ?: "OAuth flow failed"
+                                        android.util.Log.e("LapsAuth", "OAuth failed: $msg", err)
+                                        errorMessage = "OAuth failed: $msg"
+                                        Toast.makeText(context, "OAuth failed: $msg", Toast.LENGTH_LONG).show()
+                                    }
+                                    return@launch
+                                }
+
+                                val tokenStr = res.getOrThrow()
+                                android.util.Log.i("LapsAuth", "Verifying OAuth token on background IO dispatcher...")
+                                val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
+                                val authRes = withContext(Dispatchers.IO) {
+                                    client.authenticateWithToken(tokenStr)
+                                }
+
                                 withContext(Dispatchers.Main) {
                                     isLoggingIn = false
-                                    res.onSuccess { tokenStr ->
+                                    authRes.onSuccess {
                                         token = tokenStr
-                                        val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
-                                        val authRes = client.authenticateWithToken(tokenStr)
-                                        authRes.onSuccess {
-                                            LapsRepository.saveCorosToken(context, tokenStr, region = selectedRegion)
-                                            LapsRepository.saveCorosRegion(context, selectedRegion)
-                                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
-                                            LapsRepository.setSetupCompleted(context, true)
-                                            Toast.makeText(context, "Connected via COROS OAuth!", Toast.LENGTH_SHORT).show()
-                                            onConnected()
-                                        }.onFailure { err ->
-                                            errorMessage = "Token verification error: ${err.message}"
-                                        }
+                                        android.util.Log.i("LapsAuth", "COROS OAuth verification successful!")
+                                        LapsRepository.saveCorosToken(context, tokenStr, region = selectedRegion)
+                                        LapsRepository.saveCorosRegion(context, selectedRegion)
+                                        LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                        LapsRepository.setSetupCompleted(context, true)
+                                        Toast.makeText(context, "Connected via COROS OAuth!", Toast.LENGTH_SHORT).show()
+                                        onConnected()
                                     }.onFailure { err ->
-                                        errorMessage = "OAuth failed: ${err.message}"
+                                        val msg = err.message ?: err.javaClass.simpleName
+                                        android.util.Log.e("LapsAuth", "Token verification error: $msg", err)
+                                        errorMessage = "Token verification error: $msg"
+                                        Toast.makeText(context, "Verification error: $msg", Toast.LENGTH_LONG).show()
                                     }
                                 }
                             }
@@ -2936,25 +2954,40 @@ private fun LapsSettingsScreen(
                                 isSaving = true
                                 coroutineScope.launch {
                                     val res = io.github.coderang.laps.coros.CorosOAuthManager.authenticate(context, selectedRegion)
+                                    if (res.isFailure) {
+                                        withContext(Dispatchers.Main) {
+                                            isSaving = false
+                                            val err = res.exceptionOrNull()
+                                            val msg = err?.message ?: err?.javaClass?.simpleName ?: "OAuth flow failed"
+                                            android.util.Log.e("LapsAuth", "OAuth failed: $msg", err)
+                                            Toast.makeText(context, "OAuth failed: $msg", Toast.LENGTH_LONG).show()
+                                        }
+                                        return@launch
+                                    }
+
+                                    val tokenStr = res.getOrThrow()
+                                    android.util.Log.i("LapsAuth", "Verifying OAuth token on background IO dispatcher...")
+                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
+                                    val authRes = withContext(Dispatchers.IO) {
+                                        client.authenticateWithToken(tokenStr)
+                                    }
+
                                     withContext(Dispatchers.Main) {
                                         isSaving = false
-                                        res.onSuccess { tokenStr ->
+                                        authRes.onSuccess {
                                             token = tokenStr
-                                            val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
-                                            val authRes = client.authenticateWithToken(tokenStr)
-                                            authRes.onSuccess {
-                                                LapsRepository.saveCorosToken(context, tokenStr, region = selectedRegion)
-                                                LapsRepository.saveCorosRegion(context, selectedRegion)
-                                                LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
-                                                LapsRepository.saveGeminiKey(context, geminiKey)
-                                                LapsRepository.setSetupCompleted(context, true)
-                                                Toast.makeText(context, "Connected via COROS OAuth!", Toast.LENGTH_SHORT).show()
-                                                onSaved()
-                                            }.onFailure { err ->
-                                                Toast.makeText(context, "Verification error: ${err.message}", Toast.LENGTH_LONG).show()
-                                            }
+                                            android.util.Log.i("LapsAuth", "COROS OAuth verification successful!")
+                                            LapsRepository.saveCorosToken(context, tokenStr, region = selectedRegion)
+                                            LapsRepository.saveCorosRegion(context, selectedRegion)
+                                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                            LapsRepository.saveGeminiKey(context, geminiKey)
+                                            LapsRepository.setSetupCompleted(context, true)
+                                            Toast.makeText(context, "Connected via COROS OAuth!", Toast.LENGTH_SHORT).show()
+                                            onSaved()
                                         }.onFailure { err ->
-                                            Toast.makeText(context, "OAuth failed: ${err.message}", Toast.LENGTH_LONG).show()
+                                            val msg = err.message ?: err.javaClass.simpleName
+                                            android.util.Log.e("LapsAuth", "Verification error: $msg", err)
+                                            Toast.makeText(context, "Verification error: $msg", Toast.LENGTH_LONG).show()
                                         }
                                     }
                                 }

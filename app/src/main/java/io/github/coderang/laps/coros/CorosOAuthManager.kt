@@ -4,9 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Base64
+import android.util.Log
 import androidx.browser.customtabs.CustomTabsIntent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -18,6 +21,7 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.UnknownHostException
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
@@ -30,9 +34,40 @@ import java.util.concurrent.TimeUnit
  */
 object CorosOAuthManager {
 
+    internal val resilientDns = object : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            for (attempt in 1..3) {
+                try {
+                    val addresses = Dns.SYSTEM.lookup(hostname)
+                    if (addresses.isNotEmpty()) return addresses
+                } catch (e: UnknownHostException) {
+                    if (attempt == 3) break
+                    Thread.sleep(300L * attempt)
+                }
+            }
+            return when (hostname.lowercase()) {
+                "mcpus.coros.com", "mcp.coros.com" -> listOf(
+                    InetAddress.getByAddress(hostname, byteArrayOf(50.toByte(), 18.toByte(), 183.toByte(), 11.toByte())),
+                    InetAddress.getByAddress(hostname, byteArrayOf(13.toByte(), 52.toByte(), 95.toByte(), 79.toByte()))
+                )
+                "mcpeu.coros.com" -> listOf(
+                    InetAddress.getByAddress(hostname, byteArrayOf(63.toByte(), 181.toByte(), 159.toByte(), 175.toByte())),
+                    InetAddress.getByAddress(hostname, byteArrayOf(63.toByte(), 182.toByte(), 189.toByte(), 61.toByte())),
+                    InetAddress.getByAddress(hostname, byteArrayOf(3.toByte(), 126.toByte(), 38.toByte(), 48.toByte()))
+                )
+                "mcpcn.coros.com" -> listOf(
+                    InetAddress.getByAddress(hostname, byteArrayOf(8.toByte(), 141.toByte(), 27.toByte(), 17.toByte()))
+                )
+                else -> Dns.SYSTEM.lookup(hostname)
+            }
+        }
+    }
+
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .dns(resilientDns)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     fun getMcpHost(region: String): String {
@@ -66,9 +101,11 @@ object CorosOAuthManager {
 
         val port = serverSocket.localPort
         val redirectUri = "http://127.0.0.1:$port/callback"
+        Log.i("LapsAuth", "Ephemeral loopback receiver running on port $port, target region host: $mcpHost")
 
         try {
             // 2. Dynamic Client Registration (RFC 7591)
+            Log.i("LapsAuth", "Registering client dynamically at $mcpHost/connect/register...")
             val regJson = JSONObject().apply {
                 put("client_name", "Laps for Android")
                 put("redirect_uris", org.json.JSONArray().apply { put(redirectUri) })
@@ -93,9 +130,12 @@ object CorosOAuthManager {
                     return@withContext Result.failure(IllegalStateException("MCP registration failed (${resp.code}): $body"))
                 }
                 val obj = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
-                obj.optString("client_id").ifBlank {
+                val cId = obj.optString("client_id")
+                if (cId.isBlank()) {
                     return@withContext Result.failure(IllegalStateException("No client_id returned by COROS MCP"))
                 }
+                Log.i("LapsAuth", "Successfully registered OAuth client_id: $cId")
+                cId
             }
 
             // 3. Generate PKCE code verifier & S256 challenge
@@ -124,6 +164,7 @@ object CorosOAuthManager {
                 .build()
 
             // 5. Open Chrome Custom Tab / System Browser on Main Thread
+            Log.i("LapsAuth", "Opening COROS authorization URL: $authUrl")
             withContext(Dispatchers.Main) {
                 try {
                     val customTabsIntent = CustomTabsIntent.Builder()
@@ -142,12 +183,14 @@ object CorosOAuthManager {
             var authCode: String? = null
             var errorReason: String? = null
 
+            Log.i("LapsAuth", "Waiting for browser redirect callback on 127.0.0.1:$port...")
             val clientSocket = serverSocket.accept()
             clientSocket.use { socket ->
                 val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
                 val writer = OutputStreamWriter(socket.getOutputStream())
 
                 val requestLine = reader.readLine() ?: ""
+                Log.i("LapsAuth", "Received loopback request: $requestLine")
                 val parts = requestLine.split(" ")
                 if (parts.size >= 2) {
                     val pathWithQuery = parts[1]
@@ -198,7 +241,18 @@ object CorosOAuthManager {
                 return@withContext Result.failure(IllegalStateException(errorReason ?: "Authorization timed out or cancelled"))
             }
 
+            // Bring Laps back to foreground so Android unfreezes network
+            withContext(Dispatchers.Main) {
+                try {
+                    val bringToFront = Intent(context, Class.forName("io.github.coderang.laps.MainActivity")).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                    context.startActivity(bringToFront)
+                } catch (_: Throwable) {}
+            }
+
             // 7. Exchange Code for Access Token
+            Log.i("LapsAuth", "Exchanging authorization code for Bearer token at $mcpHost/oauth2/token...")
             val tokenBody = FormBody.Builder()
                 .add("grant_type", "authorization_code")
                 .add("client_id", clientId)
@@ -213,18 +267,39 @@ object CorosOAuthManager {
                 .header("User-Agent", "Mozilla/5.0 (Android; Mobile; Laps)")
                 .build()
 
-            httpClient.newCall(tokenReq).execute().use { resp ->
-                val body = resp.body?.string() ?: ""
-                if (!resp.isSuccessful) {
-                    return@withContext Result.failure(IllegalStateException("Token exchange failed (${resp.code}): $body"))
+            var body = ""
+            var code = 0
+            var exchangeSuccess = false
+            for (attempt in 1..4) {
+                try {
+                    httpClient.newCall(tokenReq).execute().use { resp ->
+                        code = resp.code
+                        body = resp.body?.string() ?: ""
+                        Log.i("LapsAuth", "Token exchange returned HTTP $code: $body")
+                        if (resp.isSuccessful) {
+                            exchangeSuccess = true
+                        }
+                    }
+                    if (exchangeSuccess) break
+                    if (code in 400..499) break // Client error (e.g. invalid code), don't retry
+                } catch (e: Exception) {
+                    Log.w("LapsAuth", "Token exchange attempt $attempt failed with exception: ${e.message}")
+                    if (attempt == 4) throw e
+                    delay(500L * attempt)
                 }
-                val tokenObj = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
-                val accessToken = tokenObj.optString("access_token")
-                if (accessToken.isNotBlank()) {
-                    Result.success(accessToken)
-                } else {
-                    Result.failure(IllegalStateException("No access_token returned by token endpoint"))
-                }
+            }
+
+            if (!exchangeSuccess) {
+                return@withContext Result.failure(IllegalStateException("Token exchange failed ($code): $body"))
+            }
+
+            val tokenObj = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+            val accessToken = tokenObj.optString("access_token")
+            if (accessToken.isNotBlank()) {
+                Log.i("LapsAuth", "OAuth token acquired successfully (length: ${accessToken.length})")
+                Result.success(accessToken)
+            } else {
+                Result.failure(IllegalStateException("No access_token returned by token endpoint: $body"))
             }
         } catch (e: Exception) {
             Result.failure(e)

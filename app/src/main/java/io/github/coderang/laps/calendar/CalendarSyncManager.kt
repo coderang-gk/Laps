@@ -253,7 +253,12 @@ object CalendarSyncManager {
                     CalendarContract.Events.DTSTART,
                     CalendarContract.Events.DTEND
                 )
-                val where = "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.DTSTART} >= ? AND (${CalendarContract.Events.TITLE} LIKE '%RACE DAY%' OR ${CalendarContract.Events.TITLE} LIKE '%Race%')"
+                val where = "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.DTSTART} >= ? AND (" +
+                    "${CalendarContract.Events.TITLE} LIKE '%RACE%' OR " +
+                    "${CalendarContract.Events.TITLE} LIKE '%Race%' OR " +
+                    "${CalendarContract.Events.TITLE} LIKE '%HM%' OR " +
+                    "${CalendarContract.Events.TITLE} LIKE '%MARATHON%' OR " +
+                    "${CalendarContract.Events.TITLE} LIKE '%Marathon%')"
                 val cursor = context.contentResolver.query(
                     uri,
                     projection,
@@ -261,20 +266,34 @@ object CalendarSyncManager {
                     arrayOf(calendarId.toString(), fromMillis.toString()),
                     "${CalendarContract.Events.DTSTART} ASC"
                 )
+                val candidates = mutableListOf<CalendarEventRecord>()
                 cursor?.use {
-                    if (it.moveToFirst()) {
+                    while (it.moveToNext()) {
                         val s = it.getLong(4)
                         val e = it.getLong(5)
-                        CalendarEventRecord(
-                            id = it.getLong(0),
-                            calendarId = it.getLong(1),
-                            title = it.getString(2) ?: "",
-                            description = it.getString(3) ?: "",
-                            startMillis = s,
-                            endMillis = if (e > s) e else s + 3600000L
+                        candidates.add(
+                            CalendarEventRecord(
+                                id = it.getLong(0),
+                                calendarId = it.getLong(1),
+                                title = it.getString(2) ?: "",
+                                description = it.getString(3) ?: "",
+                                startMillis = s,
+                                endMillis = if (e > s) e else s + 3600000L
+                            )
                         )
-                    } else null
+                    }
                 }
+                // Filter out intermediate workouts that start with W<number> (e.g. W4 Sun, W6 Sun)
+                // and select the actual target race day event (e.g. "PUNE HM — 1:45 GOAL")
+                val targetRace = candidates.find {
+                    val t = it.title.replace("✅", "").trim()
+                    !t.matches(Regex("^[Ww]\\d+.*")) && (t.contains("GOAL", ignoreCase = true) || t.contains("RACE", ignoreCase = true) || t.contains("PUNE", ignoreCase = true))
+                } ?: candidates.find {
+                    val t = it.title.replace("✅", "").trim()
+                    !t.matches(Regex("^[Ww]\\d+.*"))
+                } ?: candidates.lastOrNull()
+
+                targetRace
             } catch (_: Exception) {
                 null
             }

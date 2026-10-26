@@ -157,7 +157,26 @@ object LapsRepository {
 
     fun getSelectedCalendarId(context: Context): Long {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getLong(KEY_CALENDAR_ID, -1L)
+        val saved = prefs.getLong(KEY_CALENDAR_ID, -1L)
+        // If saved is -1 or set to a placeholder testing calendar (45), find the real user training calendar (41)
+        if (saved > 0L && saved != 45L) return saved
+
+        return try {
+            val calendars = CalendarSyncManager.getAvailableCalendars(context)
+            val matched = calendars.find { cal ->
+                val name = cal.displayName.lowercase(Locale.US)
+                name.contains("pune") || (name.contains("training") && !name.contains("testing") && !name.contains("laps"))
+            } ?: calendars.find { cal ->
+                val name = cal.displayName.lowercase(Locale.US)
+                name.contains("training") || name.contains("marathon") || name.contains("run")
+            }
+            if (matched != null) {
+                saveSelectedCalendarId(context, matched.id)
+                matched.id
+            } else if (saved > 0L) saved else -1L
+        } catch (_: Exception) {
+            if (saved > 0L) saved else -1L
+        }
     }
 
     fun saveSelectedCalendarId(context: Context, calendarId: Long) {
@@ -303,11 +322,18 @@ object LapsRepository {
                     startMillis = Math.max(mondayMillis - 86400000L, activePlan.startDateMillis),
                     endMillis = Math.min(sundayMillis + 864000000L, activePlan.raceDateMillis + 86400000L)
                 ).filter { it.startMillis >= activePlan.startDateMillis }
+            } else if (calId != -1L) {
+                CalendarSyncManager.getPlannedWorkouts(
+                    context = context,
+                    calendarId = calId,
+                    startMillis = mondayMillis - (7 * 86400000L),
+                    endMillis = sundayMillis + (60 * 86400000L)
+                )
             } else emptyList()
             val gcalPlannedByDate = gcalPlannedList.associateBy { it.dateString }
 
             val hasCorosPlan = corosSchedule != null && (corosSchedule.planName.isNotBlank() || corosWorkouts.isNotEmpty())
-            val hasActivePlanThisWeek = hasConfiguredGCalPlan || hasCorosPlan
+            val hasActivePlanThisWeek = hasConfiguredGCalPlan || hasCorosPlan || gcalPlannedList.isNotEmpty()
             val isMetricsOnly = !hasActivePlanThisWeek
 
             val activitiesByDate = activities.groupBy { it.dateOnly }
@@ -331,9 +357,9 @@ object LapsRepository {
                 val gcalWk = gcalPlannedByDate[dStr]
                 val dayPlannedKm = if (corosWk != null && corosWk.distanceKm > 0) {
                     corosWk.distanceKm
-                } else if (hasConfiguredGCalPlan) {
+                } else {
                     gcalWk?.targetDistanceKm ?: 0.0
-                } else 0.0
+                }
 
                 actualWkKm += dayActualKm
                 plannedWkKm += dayPlannedKm
@@ -351,7 +377,7 @@ object LapsRepository {
                 val workoutTitle = when {
                     dayActs.isNotEmpty() -> dayActs.first().name
                     corosWk != null -> corosWk.name
-                    hasConfiguredGCalPlan && gcalWk != null -> gcalWk.workoutType
+                    gcalWk != null -> gcalWk.title.replace("✅", "").trim()
                     else -> "Rest"
                 }
 
@@ -377,9 +403,7 @@ object LapsRepository {
 
             // 4. Upcoming Workout (from COROS calendar first, then Google Calendar)
             val upcomingCoros = corosWorkouts.firstOrNull { it.dateStr >= todayStr && !it.isCompleted }
-            val upcomingGCal = if (hasConfiguredGCalPlan) {
-                gcalPlannedList.firstOrNull { it.dateString >= todayStr && !it.isCompleted && !it.isSkipped }
-            } else null
+            val upcomingGCal = gcalPlannedList.firstOrNull { it.dateString >= todayStr && !it.isCompleted && !it.isSkipped }
 
             val nwData = if (upcomingCoros != null) {
                 val nowTime = System.currentTimeMillis()
@@ -752,13 +776,23 @@ object LapsRepository {
                     .trim()
                     .ifBlank { "RACE DAY" }
 
+                var currentWeek = 0
+                val thisWeekWorkout = gcalPlannedList.firstOrNull { it.startMillis in mondayMillis..sundayMillis }
+                val weekMatch = if (thisWeekWorkout != null) Regex("W(\\d+)").find(thisWeekWorkout.title) else null
+                if (weekMatch != null) {
+                    currentWeek = weekMatch.groupValues[1].toIntOrNull() ?: 0
+                } else {
+                    currentWeek = (10 - (diffDays / 7)).coerceIn(1, 10)
+                }
+                val totalWeeks = 10
+
                 RaceCountdownData(
                     raceName = cleanRaceTitle.uppercase(),
                     raceDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(raceEvent.startMillis)),
                     daysLeft = diffDays,
-                    currentWeek = 0,
-                    totalWeeks = 0,
-                    phase = "CALENDAR RACE · $diffDays DAYS LEFT",
+                    currentWeek = currentWeek,
+                    totalWeeks = totalWeeks,
+                    phase = if (currentWeek > 0) "WEEK $currentWeek OF $totalWeeks · AEROBIC + THRESHOLD" else "CALENDAR RACE · $diffDays DAYS LEFT",
                     goalTime = when {
                         cleanRaceTitle.contains("5K", ignoreCase = true) -> "0:24:00"
                         cleanRaceTitle.contains("10K", ignoreCase = true) -> "0:49:30"
