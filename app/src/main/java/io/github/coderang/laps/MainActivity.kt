@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -3837,22 +3838,38 @@ private fun PlanRaceHubScreen(
                         )
                     }
                 },
-                actions = {
-                    if (selectedTab != 2) {
-                        FilledTonalButton(
-                            onClick = { selectedTab = 2 },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            Text(if (activePlan != null) "Edit Plan" else "Build Plan")
-                        }
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             )
+        },
+        floatingActionButton = {
+            AnimatedVisibility(
+                visible = selectedTab != 2,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                ExtendedFloatingActionButton(
+                    onClick = { selectedTab = 2 },
+                    icon = {
+                        Icon(
+                            imageVector = rememberEditVector(),
+                            contentDescription = if (activePlan != null) "Edit Plan" else "Build Plan"
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = if (activePlan != null) "Edit Plan" else "Build Plan",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = RoundedCornerShape(20.dp),
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
+                )
+            }
         }
     ) { padding ->
         Column(
@@ -4813,6 +4830,38 @@ private fun rememberRefreshVector(): ImageVector = remember {
             horizontalLineTo(20.0f)
             verticalLineTo(4.0f)
             lineTo(17.65f, 6.35f)
+            close()
+        }
+    }.build()
+}
+
+@Composable
+private fun rememberEditVector(): ImageVector = remember {
+    ImageVector.Builder(
+        name = "Edit",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.White),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(3f, 17.25f)
+            verticalLineTo(21f)
+            horizontalLineTo(6.75f)
+            lineTo(17.81f, 9.94f)
+            lineTo(14.06f, 6.19f)
+            lineTo(3f, 17.25f)
+            close()
+            moveTo(20.71f, 7.04f)
+            curveTo(21.1f, 6.65f, 21.1f, 6.02f, 20.71f, 5.63f)
+            lineTo(18.37f, 3.29f)
+            curveTo(17.98f, 2.9f, 17.35f, 2.9f, 16.96f, 3.29f)
+            lineTo(15.13f, 5.12f)
+            lineTo(18.88f, 8.87f)
+            lineTo(20.71f, 7.04f)
             close()
         }
     }.build()
