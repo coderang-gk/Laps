@@ -3131,80 +3131,92 @@ private fun LapsSettingsScreen(
                         )
                     }
                 },
-                actions = {
-                    Button(
-                        onClick = {
-                            if (isSaving) return@Button
-                            if (isOAuthMode && token.isNotBlank()) {
-                                isSaving = true
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
-                                    val authRes = client.authenticateWithToken(token.trim())
-                                    withContext(Dispatchers.Main) {
-                                        isSaving = false
-                                        authRes.onSuccess {
-                                            LapsRepository.saveCorosToken(context, token.trim(), region = selectedRegion)
-                                            LapsRepository.saveCorosRegion(context, selectedRegion)
-                                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
-                                            LapsRepository.saveGeminiKey(context, geminiKey)
-                                            LapsRepository.setSetupCompleted(context, true)
-                                            onSaved()
-                                        }.onFailure { err ->
-                                            Toast.makeText(context, "OAuth Token Error: ${err.message ?: "Invalid token"}", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                }
-                            } else if (!isOAuthMode && email.isNotBlank() && password.isNotBlank()) {
-                                isSaving = true
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
-                                    val loginRes = client.login(email.trim(), password.trim())
-                                    withContext(Dispatchers.Main) {
-                                        isSaving = false
-                                        loginRes.onSuccess {
-                                            LapsRepository.saveCorosCredentials(context, email.trim(), password.trim(), region = selectedRegion)
-                                            LapsRepository.saveCorosRegion(context, selectedRegion)
-                                            LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
-                                            LapsRepository.saveGeminiKey(context, geminiKey)
-                                            LapsRepository.setSetupCompleted(context, true)
-                                            onSaved()
-                                        }.onFailure { err ->
-                                            Toast.makeText(context, "Login failed: ${err.message ?: "Invalid credentials"}", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                }
-                            } else {
-                                if (isOAuthMode) {
-                                    LapsRepository.saveCorosToken(context, token, region = selectedRegion)
-                                } else {
-                                    LapsRepository.saveCorosCredentials(context, email, password, region = selectedRegion)
-                                }
-                                LapsRepository.saveCorosRegion(context, selectedRegion)
-                                LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
-                                LapsRepository.saveGeminiKey(context, geminiKey)
-                                LapsRepository.setSetupCompleted(context, true)
-                                onSaved()
-                            }
-                        },
-                        enabled = !isSaving,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        if (isSaving) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Text("Save & Sync", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    if (isSaving) return@ExtendedFloatingActionButton
+                    if (isOAuthMode && token.isNotBlank()) {
+                        isSaving = true
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
+                            val authRes = client.authenticateWithToken(token.trim())
+                            withContext(Dispatchers.Main) {
+                                isSaving = false
+                                authRes.onSuccess {
+                                    LapsRepository.saveCorosToken(context, token.trim(), region = selectedRegion)
+                                    LapsRepository.saveCorosRegion(context, selectedRegion)
+                                    LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                    LapsRepository.saveGeminiKey(context, geminiKey)
+                                    LapsRepository.setSetupCompleted(context, true)
+                                    onSaved()
+                                }.onFailure { err ->
+                                    Toast.makeText(context, "OAuth Token Error: ${err.message ?: "Invalid token"}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    } else if (!isOAuthMode && email.isNotBlank() && password.isNotBlank()) {
+                        isSaving = true
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
+                            val loginRes = client.login(email.trim(), password.trim())
+                            withContext(Dispatchers.Main) {
+                                isSaving = false
+                                loginRes.onSuccess {
+                                    LapsRepository.saveCorosCredentials(context, email.trim(), password.trim(), region = selectedRegion)
+                                    LapsRepository.saveCorosRegion(context, selectedRegion)
+                                    LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                                    LapsRepository.saveGeminiKey(context, geminiKey)
+                                    LapsRepository.setSetupCompleted(context, true)
+                                    onSaved()
+                                }.onFailure { err ->
+                                    Toast.makeText(context, "Login failed: ${err.message ?: "Invalid credentials"}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    } else {
+                        if (isOAuthMode) {
+                            LapsRepository.saveCorosToken(context, token, region = selectedRegion)
+                        } else {
+                            LapsRepository.saveCorosCredentials(context, email, password, region = selectedRegion)
+                        }
+                        LapsRepository.saveCorosRegion(context, selectedRegion)
+                        LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
+                        LapsRepository.saveGeminiKey(context, geminiKey)
+                        LapsRepository.setSetupCompleted(context, true)
+                        onSaved()
+                    }
+                },
+                icon = {
+                    if (isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    } else {
+                        Icon(
+                            imageVector = rememberCheckVector(),
+                            contentDescription = "Save & Sync",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                },
+                text = {
+                    Text(
+                        text = if (isSaving) "Saving..." else "Save & Sync",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                shape = RoundedCornerShape(20.dp),
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
             )
         }
     ) { padding ->
@@ -3714,7 +3726,7 @@ private fun LapsSettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(88.dp))
         }
     }
 }
@@ -4681,7 +4693,7 @@ private fun PlanRaceHubScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(88.dp))
                     }
                 }
             }
@@ -5027,6 +5039,30 @@ private fun rememberArrowBackVector(): ImageVector = remember {
             lineTo(13.41f, 18.59f)
             lineTo(7.83f, 13.0f)
             lineTo(20.0f, 13.0f)
+            close()
+        }
+    }.build()
+}
+
+@Composable
+private fun rememberCheckVector(): ImageVector = remember {
+    ImageVector.Builder(
+        name = "Check",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.White),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(9.0f, 16.17f)
+            lineTo(4.83f, 12.0f)
+            lineTo(3.41f, 13.41f)
+            lineTo(9.0f, 19.0f)
+            lineTo(21.0f, 7.0f)
+            lineTo(19.59f, 5.59f)
             close()
         }
     }.build()
