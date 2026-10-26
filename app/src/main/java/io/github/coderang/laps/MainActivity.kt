@@ -207,165 +207,184 @@ class MainActivity : ComponentActivity() {
             }
 
             MaterialTheme(colorScheme = colorScheme) {
-                when (currentScreen) {
-                    AppScreen.MAIN -> {
-                        MainAppScaffold(
-                            payload = payload,
-                            isSyncing = isSyncing,
-                            selectedSection = selectedSection,
-                            onSectionSelected = { selectedSection = it },
-                            selectedFilter = selectedFilter,
-                            onFilterSelected = { selectedFilter = it },
-                            catalog = catalog,
-                            onRunClicked = { run -> selectedRunForDetail = run },
-                            onResolveMissedWorkout = { action, targetDate ->
-                                val missed = payload.missedWorkout ?: return@MainAppScaffold
-                                isResolvingMissed = true
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    val success = if (action == "SHIFT") {
-                                        val cal = Calendar.getInstance()
-                                        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                                        val targetTime = try {
-                                            sdf.parse(targetDate)?.time ?: (System.currentTimeMillis() + 86400000L)
-                                        } catch (_: Exception) { System.currentTimeMillis() + 86400000L }
-                                        CalendarSyncManager.shiftWorkout(context, missed.eventId, targetTime)
-                                    } else {
-                                        CalendarSyncManager.skipWorkout(context, missed.eventId)
-                                    }
-
-                                    withContext(Dispatchers.Main) {
-                                        isResolvingMissed = false
-                                        val updated = payload.copy(missedWorkout = null)
-                                        payload = updated
-                                        LapsRepository.setCachedPayload(updated)
-                                        LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context)
-
-                                        val msg = if (action == "SHIFT") {
-                                            "Shifted to ${targetDate.ifBlank { "upcoming day" }} in Device Calendar"
+                AnimatedContent(
+                    targetState = currentScreen,
+                    transitionSpec = {
+                        val toRight = targetState.ordinal > initialState.ordinal
+                        val slideOffset = if (toRight) 1 else -1
+                        (slideInHorizontally(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+                            initialOffsetX = { (it * 0.35f * slideOffset).toInt() }
+                        ) + fadeIn(tween(220)))
+                        .togetherWith(
+                            slideOutHorizontally(
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                                targetOffsetX = { -(it * 0.25f * slideOffset).toInt() }
+                            ) + fadeOut(tween(160))
+                        )
+                    },
+                    label = "screen_navigation_spring"
+                ) { screen ->
+                    when (screen) {
+                        AppScreen.MAIN -> {
+                            MainAppScaffold(
+                                payload = payload,
+                                isSyncing = isSyncing,
+                                selectedSection = selectedSection,
+                                onSectionSelected = { selectedSection = it },
+                                selectedFilter = selectedFilter,
+                                onFilterSelected = { selectedFilter = it },
+                                catalog = catalog,
+                                onRunClicked = { run -> selectedRunForDetail = run },
+                                onResolveMissedWorkout = { action, targetDate ->
+                                    val missed = payload.missedWorkout ?: return@MainAppScaffold
+                                    isResolvingMissed = true
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        val success = if (action == "SHIFT") {
+                                            val cal = Calendar.getInstance()
+                                            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                                            val targetTime = try {
+                                                sdf.parse(targetDate)?.time ?: (System.currentTimeMillis() + 86400000L)
+                                            } catch (_: Exception) { System.currentTimeMillis() + 86400000L }
+                                            CalendarSyncManager.shiftWorkout(context, missed.eventId, targetTime)
                                         } else {
-                                            "Workout marked [SKIPPED] in Device Calendar"
+                                            CalendarSyncManager.skipWorkout(context, missed.eventId)
                                         }
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            isResolvingMissed = isResolvingMissed,
-                            onSyncClicked = {
-                                isSyncing = true
-                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
-                                    runOnUiThread {
-                                        val (email, pwd) = LapsRepository.getCorosCredentials(context)
-                                        val token = LapsRepository.getCorosToken(context)
-                                        if (token.isBlank() && (email.isBlank() || pwd.isBlank())) {
-                                            LapsRepository.resetSamplePayload(context)
-                                        }
-                                        payload = LapsRepository.getCachedPayload(context)
-                                        isSyncing = false
-                                        res.onSuccess {
-                                            Toast.makeText(context, "Synced directly with COROS & Device Calendar", Toast.LENGTH_SHORT).show()
-                                        }.onFailure { err ->
-                                            Toast.makeText(context, "Using local cache: ${err.message}", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                }
-                            },
-                            onPlanClicked = {
-                                initialPlanHubTab = 0
-                                currentScreen = AppScreen.PLAN_RACE_HUB
-                            },
-                            onWorkoutClicked = {
-                                initialPlanHubTab = 0
-                                currentScreen = AppScreen.PLAN_RACE_HUB
-                            },
-                            onRaceClicked = {
-                                initialPlanHubTab = 1
-                                currentScreen = AppScreen.PLAN_RACE_HUB
-                            },
-                            onSettingsClicked = { currentScreen = AppScreen.SETTINGS },
-                            onConnectAccountClicked = { currentScreen = AppScreen.ONBOARDING },
-                            onPinWidget = { item ->
-                                LapsRepository.setStyleForTile(context, item.slot, item.styleIndex)
-                                LapsWidgetUpdateHelper.renderAllFromCache(context)
-                                pinWidgetToLauncher(item)
-                            }
-                        )
 
-                        selectedRunForDetail?.let { run ->
-                            RunDetailModalBottomSheet(
-                                run = run,
-                                onDismiss = { selectedRunForDetail = null }
-                            )
-                        }
-                    }
-                    AppScreen.ONBOARDING -> {
-                        LapsOnboardingScreen(
-                            onConnected = {
-                                currentScreen = AppScreen.MAIN
-                                isSyncing = true
-                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
-                                    runOnUiThread {
-                                        payload = LapsRepository.getCachedPayload(context)
-                                        isSyncing = false
+                                        withContext(Dispatchers.Main) {
+                                            isResolvingMissed = false
+                                            val updated = payload.copy(missedWorkout = null)
+                                            payload = updated
+                                            LapsRepository.setCachedPayload(updated)
+                                            LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context)
+
+                                            val msg = if (action == "SHIFT") {
+                                                "Shifted to ${targetDate.ifBlank { "upcoming day" }} in Device Calendar"
+                                            } else {
+                                                "Workout marked [SKIPPED] in Device Calendar"
+                                            }
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
                                     }
+                                },
+                                isResolvingMissed = isResolvingMissed,
+                                onSyncClicked = {
+                                    isSyncing = true
+                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
+                                        runOnUiThread {
+                                            val (email, pwd) = LapsRepository.getCorosCredentials(context)
+                                            val token = LapsRepository.getCorosToken(context)
+                                            if (token.isBlank() && (email.isBlank() || pwd.isBlank())) {
+                                                LapsRepository.resetSamplePayload(context)
+                                            }
+                                            payload = LapsRepository.getCachedPayload(context)
+                                            isSyncing = false
+                                            res.onSuccess {
+                                                Toast.makeText(context, "Synced directly with COROS & Device Calendar", Toast.LENGTH_SHORT).show()
+                                            }.onFailure { err ->
+                                                Toast.makeText(context, "Using local cache: ${err.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                onPlanClicked = {
+                                    initialPlanHubTab = 0
+                                    currentScreen = AppScreen.PLAN_RACE_HUB
+                                },
+                                onWorkoutClicked = {
+                                    initialPlanHubTab = 0
+                                    currentScreen = AppScreen.PLAN_RACE_HUB
+                                },
+                                onRaceClicked = {
+                                    initialPlanHubTab = 1
+                                    currentScreen = AppScreen.PLAN_RACE_HUB
+                                },
+                                onSettingsClicked = { currentScreen = AppScreen.SETTINGS },
+                                onConnectAccountClicked = { currentScreen = AppScreen.ONBOARDING },
+                                onPinWidget = { item ->
+                                    LapsRepository.setStyleForTile(context, item.slot, item.styleIndex)
+                                    LapsWidgetUpdateHelper.renderAllFromCache(context)
+                                    pinWidgetToLauncher(item)
                                 }
-                            },
-                            onExploreDemo = {
-                                LapsRepository.setSetupCompleted(context, true)
-                                currentScreen = AppScreen.MAIN
+                            )
+
+                            selectedRunForDetail?.let { run ->
+                                RunDetailModalBottomSheet(
+                                    run = run,
+                                    onDismiss = { selectedRunForDetail = null }
+                                )
                             }
-                        )
-                    }
-                    AppScreen.SETTINGS -> {
-                        LapsSettingsScreen(
-                            payload = payload,
-                            currentTheme = appTheme,
-                            onThemeChange = { newTheme ->
-                                appTheme = newTheme
-                                LapsRepository.saveAppTheme(context, newTheme)
-                                LapsWidgetUpdateHelper.renderAllFromCache(context)
-                            },
-                            onNavigateBack = { currentScreen = AppScreen.MAIN },
-                            onSaved = {
-                                if (!LapsRepository.hasCredentials(context)) {
-                                    currentScreen = AppScreen.ONBOARDING
-                                } else {
+                        }
+                        AppScreen.ONBOARDING -> {
+                            LapsOnboardingScreen(
+                                onConnected = {
+                                    currentScreen = AppScreen.MAIN
+                                    isSyncing = true
+                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
+                                        runOnUiThread {
+                                            payload = LapsRepository.getCachedPayload(context)
+                                            isSyncing = false
+                                        }
+                                    }
+                                },
+                                onExploreDemo = {
+                                    LapsRepository.setSetupCompleted(context, true)
                                     currentScreen = AppScreen.MAIN
                                 }
-                                isSyncing = true
-                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
-                                    runOnUiThread {
-                                        payload = LapsRepository.getCachedPayload(context)
-                                        isSyncing = false
-                                        res.onSuccess {
-                                            Toast.makeText(context, "Logged in & Synced directly with COROS!", Toast.LENGTH_SHORT).show()
-                                        }.onFailure { err ->
-                                            Toast.makeText(context, "Sync note: ${err.message}", Toast.LENGTH_LONG).show()
+                            )
+                        }
+                        AppScreen.SETTINGS -> {
+                            LapsSettingsScreen(
+                                payload = payload,
+                                currentTheme = appTheme,
+                                onThemeChange = { newTheme ->
+                                    appTheme = newTheme
+                                    LapsRepository.saveAppTheme(context, newTheme)
+                                    LapsWidgetUpdateHelper.renderAllFromCache(context)
+                                },
+                                onNavigateBack = { currentScreen = AppScreen.MAIN },
+                                onSaved = {
+                                    if (!LapsRepository.hasCredentials(context)) {
+                                        currentScreen = AppScreen.ONBOARDING
+                                    } else {
+                                        currentScreen = AppScreen.MAIN
+                                    }
+                                    isSyncing = true
+                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) { res ->
+                                        runOnUiThread {
+                                            payload = LapsRepository.getCachedPayload(context)
+                                            isSyncing = false
+                                            res.onSuccess {
+                                                Toast.makeText(context, "Logged in & Synced directly with COROS!", Toast.LENGTH_SHORT).show()
+                                            }.onFailure { err ->
+                                                Toast.makeText(context, "Sync note: ${err.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                onOpenPlanHub = {
+                                    initialPlanHubTab = 0
+                                    currentScreen = AppScreen.PLAN_RACE_HUB
+                                }
+                            )
+                        }
+                        AppScreen.PLAN_RACE_HUB -> {
+                            PlanRaceHubScreen(
+                                payload = payload,
+                                initialTab = initialPlanHubTab,
+                                onNavigateBack = { currentScreen = AppScreen.MAIN },
+                                onOpenSettings = { currentScreen = AppScreen.SETTINGS },
+                                onPlanPublished = {
+                                    isSyncing = true
+                                    LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
+                                        runOnUiThread {
+                                            payload = LapsRepository.getCachedPayload(context)
+                                            isSyncing = false
                                         }
                                     }
                                 }
-                            },
-                            onOpenPlanHub = {
-                                initialPlanHubTab = 0
-                                currentScreen = AppScreen.PLAN_RACE_HUB
-                            }
-                        )
-                    }
-                    AppScreen.PLAN_RACE_HUB -> {
-                        PlanRaceHubScreen(
-                            payload = payload,
-                            initialTab = initialPlanHubTab,
-                            onNavigateBack = { currentScreen = AppScreen.MAIN },
-                            onOpenSettings = { currentScreen = AppScreen.SETTINGS },
-                            onPlanPublished = {
-                                isSyncing = true
-                                LapsWidgetUpdateHelper.refreshAllWidgetsAsync(context) {
-                                    runOnUiThread {
-                                        payload = LapsRepository.getCachedPayload(context)
-                                        isSyncing = false
-                                    }
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -507,29 +526,59 @@ private fun MainAppScaffold(
             }
         }
     ) { innerPadding ->
-        if (selectedSection == 0) {
-            TrainingHubSection(
-                payload = payload,
-                isSyncing = isSyncing,
-                contentPadding = innerPadding,
-                onRunClicked = onRunClicked,
-                onResolveMissedWorkout = onResolveMissedWorkout,
-                isResolvingMissed = isResolvingMissed,
-                onConnectAccountClicked = onConnectAccountClicked,
-                onPlanClicked = onPlanClicked,
-                onWorkoutClicked = onWorkoutClicked,
-                onRaceClicked = onRaceClicked,
-                onBrowseWidgetsClicked = { onSectionSelected(1) }
-            )
-        } else {
-            WidgetsGallerySection(
-                payload = payload,
-                selectedFilter = selectedFilter,
-                onFilterSelected = onFilterSelected,
-                catalog = catalog,
-                contentPadding = innerPadding,
-                onPinWidget = onPinWidget
-            )
+        AnimatedContent(
+            targetState = selectedSection,
+            transitionSpec = {
+                if (targetState > initialState) {
+                    (slideInHorizontally(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+                        initialOffsetX = { it / 3 }
+                    ) + fadeIn(tween(180)))
+                    .togetherWith(
+                        slideOutHorizontally(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                            targetOffsetX = { -it / 3 }
+                        ) + fadeOut(tween(140))
+                    )
+                } else {
+                    (slideInHorizontally(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow),
+                        initialOffsetX = { -it / 3 }
+                    ) + fadeIn(tween(180)))
+                    .togetherWith(
+                        slideOutHorizontally(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium),
+                            targetOffsetX = { it / 3 }
+                        ) + fadeOut(tween(140))
+                    )
+                }
+            },
+            label = "section_nav_transition"
+        ) { section ->
+            if (section == 0) {
+                TrainingHubSection(
+                    payload = payload,
+                    isSyncing = isSyncing,
+                    contentPadding = innerPadding,
+                    onRunClicked = onRunClicked,
+                    onResolveMissedWorkout = onResolveMissedWorkout,
+                    isResolvingMissed = isResolvingMissed,
+                    onConnectAccountClicked = onConnectAccountClicked,
+                    onPlanClicked = onPlanClicked,
+                    onWorkoutClicked = onWorkoutClicked,
+                    onRaceClicked = onRaceClicked,
+                    onBrowseWidgetsClicked = { onSectionSelected(1) }
+                )
+            } else {
+                WidgetsGallerySection(
+                    payload = payload,
+                    selectedFilter = selectedFilter,
+                    onFilterSelected = onFilterSelected,
+                    catalog = catalog,
+                    contentPadding = innerPadding,
+                    onPinWidget = onPinWidget
+                )
+            }
         }
     }
 }
@@ -1289,34 +1338,44 @@ private fun WeeklyMileageProgressCard(payload: LapsPayload, onPlanClicked: (() -
                         }
                     }
 
-                    if (selectedDayIndex != null) {
+                    AnimatedVisibility(
+                        visible = selectedDayIndex != null,
+                        enter = fadeIn(tween(180)) + expandVertically(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+                        ),
+                        exit = fadeOut(tween(120)) + shrinkVertically(
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+                        )
+                    ) {
                         val sel = wm.days.find { it.index == selectedDayIndex }
                         if (sel != null && (sel.actualKm > 0 || sel.plannedKm > 0 || sel.workoutType.isNotBlank())) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                            Column {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${sel.dayName} · ${sel.workoutType}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
                                         Text(
-                                            text = "${sel.dayName} · ${sel.workoutType}",
+                                            text = if (sel.actualKm > 0) "${String.format(Locale.US, "%.1f", sel.actualKm)} km" else "${String.format(Locale.US, "%.0f", sel.plannedKm)} km planned",
                                             style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = MaterialTheme.colorScheme.primary
                                         )
                                     }
-                                    Text(
-                                        text = if (sel.actualKm > 0) "${String.format(Locale.US, "%.1f", sel.actualKm)} km" else "${String.format(Locale.US, "%.0f", sel.plannedKm)} km planned",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
                                 }
                             }
                         }
