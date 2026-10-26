@@ -37,6 +37,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -4226,7 +4228,7 @@ private fun PlanRaceHubScreen(
     val rc = payload.raceCountdown
     val nw = payload.nextWorkout
 
-    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
+    val pagerState = rememberPagerState(initialPage = initialTab.coerceIn(0, 2)) { 3 }
 
     // Customizer / Plan Generator State
     var selectedDistance by remember {
@@ -4339,12 +4341,16 @@ private fun PlanRaceHubScreen(
         },
         floatingActionButton = {
             AnimatedVisibility(
-                visible = selectedTab != 2,
+                visible = pagerState.currentPage != 2,
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut()
             ) {
                 ExtendedFloatingActionButton(
-                    onClick = { selectedTab = 2 },
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(2)
+                        }
+                    },
                     icon = {
                         Icon(
                             imageVector = rememberEditVector(),
@@ -4371,26 +4377,42 @@ private fun PlanRaceHubScreen(
                 .padding(padding)
         ) {
             // Tabs
-            PrimaryTabRow(selectedTabIndex = selectedTab) {
+            PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
                 Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Schedule", maxLines = 1, fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal) }
+                    selected = pagerState.currentPage == 0,
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(0)
+                        }
+                    },
+                    text = { Text("Schedule", maxLines = 1, fontWeight = if (pagerState.currentPage == 0) FontWeight.Bold else FontWeight.Normal) }
                 )
                 Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Race Strategy", maxLines = 1, fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal) }
+                    selected = pagerState.currentPage == 1,
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(1)
+                        }
+                    },
+                    text = { Text("Race Strategy", maxLines = 1, fontWeight = if (pagerState.currentPage == 1) FontWeight.Bold else FontWeight.Normal) }
                 )
                 Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    text = { Text("Customizer", maxLines = 1, fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Normal) }
+                    selected = pagerState.currentPage == 2,
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(2)
+                        }
+                    },
+                    text = { Text("Customizer", maxLines = 1, fontWeight = if (pagerState.currentPage == 2) FontWeight.Bold else FontWeight.Normal) }
                 )
             }
 
-            when (selectedTab) {
-                0 -> {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                when (page) {
+                    0 -> {
                     // Schedule Tab (Multi-Week Collapsible Accordion + Next Workout)
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -4422,7 +4444,11 @@ private fun PlanRaceHubScreen(
                                         )
                                         Spacer(modifier = Modifier.height(16.dp))
                                         Button(
-                                            onClick = { selectedTab = 2 },
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    pagerState.animateScrollToPage(2)
+                                                }
+                                            },
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
                                             Text("Build 80/20 Plan")
@@ -5133,7 +5159,9 @@ private fun PlanRaceHubScreen(
                                             "Published $planWeeks-week $displayName plan starting ${SimpleDateFormat("MMM d", Locale.US).format(startCal.time)}!",
                                             Toast.LENGTH_LONG
                                         ).show()
-                                        selectedTab = 0
+                                        coroutineScope.launch {
+                                            pagerState.animateScrollToPage(0)
+                                        }
                                         onPlanPublished()
                                     }
                                 }
@@ -5180,6 +5208,7 @@ private fun PlanRaceHubScreen(
             }
         }
     }
+}
 }
 
 @Composable
