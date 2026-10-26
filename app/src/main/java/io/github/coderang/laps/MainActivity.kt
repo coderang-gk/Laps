@@ -3015,6 +3015,89 @@ private fun AuthMethodSegmentedTabs(
     }
 }
 
+@Composable
+private fun CorosRegionDropdown(
+    selectedRegion: String,
+    onRegionSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val corosRegions = listOf(
+        "teamapi.coros.com" to "Global / US",
+        "teameuapi.coros.com" to "Europe",
+        "teamsgapi.coros.com" to "Singapore / Asia",
+        "teamcnapi.coros.com" to "China"
+    )
+    var expanded by remember { mutableStateOf(false) }
+    val currentLabel = corosRegions.find { it.first == selectedRegion }?.second ?: "Global / US"
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        OutlinedCard(
+            onClick = { expanded = !expanded },
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "COROS Server Region",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = currentLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) rememberArrowUpVector() else rememberArrowDownVector(),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.widthIn(min = 220.dp, max = 320.dp)
+        ) {
+            corosRegions.forEach { (reg, label) ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = label,
+                            fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selectedRegion == reg) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onClick = {
+                        onRegionSelected(reg)
+                        expanded = false
+                    },
+                    trailingIcon = if (selectedRegion == reg) {
+                        {
+                            Icon(
+                                imageVector = rememberCheckVector(),
+                                contentDescription = "Selected",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    } else null
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LapsOnboardingScreen(
@@ -3146,38 +3229,10 @@ private fun LapsOnboardingScreen(
 
                     // Region Selector (Direct Login only)
                     if (!isOAuthMode) {
-                        Column {
-                            Text(
-                                text = "COROS Server Region",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf(
-                                    "teamapi.coros.com" to "Global / US",
-                                    "teameuapi.coros.com" to "Europe",
-                                    "teamsgapi.coros.com" to "Singapore / Asia",
-                                    "teamcnapi.coros.com" to "China"
-                                ).forEach { (reg, label) ->
-                                    FilterChip(
-                                        selected = selectedRegion == reg,
-                                        onClick = { selectedRegion = reg },
-                                        label = {
-                                            Text(
-                                                text = label,
-                                                fontSize = 11.sp,
-                                                fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                        }
+                        CorosRegionDropdown(
+                            selectedRegion = selectedRegion,
+                            onRegionSelected = { selectedRegion = it }
+                        )
                     }
 
                     if (isOAuthMode) {
@@ -3781,37 +3836,10 @@ private fun LapsSettingsScreen(
                     // Region Selector (Direct Login only)
                     if (!isOAuthMode) {
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "COROS Server Region",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        CorosRegionDropdown(
+                            selectedRegion = selectedRegion,
+                            onRegionSelected = { selectedRegion = it }
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            listOf(
-                                "teamapi.coros.com" to "Global / US",
-                                "teameuapi.coros.com" to "Europe",
-                                "teamsgapi.coros.com" to "Singapore / Asia",
-                                "teamcnapi.coros.com" to "China"
-                            ).forEach { (reg, label) ->
-                                FilterChip(
-                                    selected = selectedRegion == reg,
-                                    onClick = { selectedRegion = reg },
-                                    label = {
-                                        Text(
-                                            text = label,
-                                            fontSize = 11.sp,
-                                            fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
