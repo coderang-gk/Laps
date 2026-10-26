@@ -87,6 +87,13 @@ fun WatchFacePreviewCanvas(
             Typeface.DEFAULT_BOLD
         }
     }
+    val bubblyAodFont = remember {
+        try {
+            ResourcesCompat.getFont(context, R.font.google_sans_flex_aod)
+        } catch (_: Exception) {
+            null
+        }
+    }
     val monoFont = remember {
         try {
             ResourcesCompat.getFont(context, R.font.google_sans_mono)
@@ -148,7 +155,7 @@ fun WatchFacePreviewCanvas(
             modifier = Modifier
                 .fillMaxSize(config.model.bezelRatio)
                 .clip(CircleShape)
-                .background(config.palette.backgroundColor)
+                .background(if (config.isAodMode) Color.Black else config.palette.backgroundColor)
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val center = Offset(size.width / 2f, size.height / 2f)
@@ -167,6 +174,7 @@ fun WatchFacePreviewCanvas(
                             thresholdPace = thresholdPace,
                             daysToRace = daysToRace,
                             bubblyFont = bubblyFont,
+                            bubblyAodFont = bubblyAodFont,
                             monoFont = monoFont
                         )
                     }
@@ -256,8 +264,11 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     thresholdPace: String,
     daysToRace: Int,
     bubblyFont: Typeface?,
+    bubblyAodFont: Typeface? = null,
     monoFont: Typeface?
 ) {
+    val isAod = config.isAodMode
+
     // Material You dual-tone diagonal pairing matching Google Pixel Watch Bold Digital
     val (c1, c2, c3, c4) = when (config.palette) {
         WatchFacePalette.OBSIDIAN -> listOf(
@@ -286,16 +297,20 @@ private fun DrawScope.drawPixelBubblyWatchFace(
         )
     }
 
-    // Outer Edge Complications (Pushed to perimeter like Pixel Watch Radial)
+    // Outer Edge Complications
     val compPaint = android.graphics.Paint().apply {
         isAntiAlias = true
         typeface = monoFont ?: Typeface.MONOSPACE
-        color = config.palette.secondaryColor.copy(alpha = 0.85f).toArgb()
+        color = if (isAod) {
+            Color.White.copy(alpha = 0.45f).toArgb()
+        } else {
+            config.palette.secondaryColor.copy(alpha = 0.85f).toArgb()
+        }
         textSize = radius * 0.078f
         textAlign = android.graphics.Paint.Align.CENTER
     }
 
-    // Top: Date (e.g. "MAR 27 • FRI")
+    // Top: Date (e.g. "MAR 27 • FRI") - visible in both active and AOD
     drawContext.canvas.nativeCanvas.drawText(
         dateStr,
         center.x,
@@ -303,29 +318,32 @@ private fun DrawScope.drawPixelBubblyWatchFace(
         compPaint
     )
 
-    // Left: Battery / Acute Load
-    drawContext.canvas.nativeCanvas.drawText(
-        "$acuteLoad AC",
-        center.x - (radius * 0.84f),
-        center.y + (radius * 0.02f),
-        compPaint
-    )
+    // Peripheral sports metrics only display in active display mode to save OLED power in AOD
+    if (!isAod) {
+        // Left: Battery / Acute Load
+        drawContext.canvas.nativeCanvas.drawText(
+            "$acuteLoad AC",
+            center.x - (radius * 0.84f),
+            center.y + (radius * 0.02f),
+            compPaint
+        )
 
-    // Right: Threshold Pace
-    drawContext.canvas.nativeCanvas.drawText(
-        thresholdPace,
-        center.x + (radius * 0.84f),
-        center.y + (radius * 0.02f),
-        compPaint
-    )
+        // Right: Threshold Pace
+        drawContext.canvas.nativeCanvas.drawText(
+            thresholdPace,
+            center.x + (radius * 0.84f),
+            center.y + (radius * 0.02f),
+            compPaint
+        )
 
-    // Bottom: Race Countdown
-    drawContext.canvas.nativeCanvas.drawText(
-        "${daysToRace}d RACE",
-        center.x,
-        center.y + (radius * 0.87f),
-        compPaint
-    )
+        // Bottom: Race Countdown
+        drawContext.canvas.nativeCanvas.drawText(
+            "${daysToRace}d RACE",
+            center.x,
+            center.y + (radius * 0.87f),
+            compPaint
+        )
+    }
 
     // Center 4 Interlocking Digits (Upright 90°, prominent black cutout border)
     val d0 = if (hoursStr.length >= 2) hoursStr.substring(0, 1) else "0"
@@ -344,7 +362,7 @@ private fun DrawScope.drawPixelBubblyWatchFace(
         canvas.save()
         canvas.translate(center.x + xOff, center.y + yOff)
 
-        // 1. Thick pure black outline cutout (prominent separation border matching Pixel Watch reference)
+        // 1. Black cutout border and backing to cleanly separate and mask underlying digits
         val strokePaint = android.graphics.Paint().apply {
             isAntiAlias = true
             typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
@@ -357,21 +375,52 @@ private fun DrawScope.drawPixelBubblyWatchFace(
             this.color = android.graphics.Color.BLACK
         }
 
-        // 2. Vibrant solid color fill
-        val fillPaint = android.graphics.Paint().apply {
+        val solidBlackPaint = android.graphics.Paint().apply {
             isAntiAlias = true
             typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
             this.textSize = textSizePx
             this.textAlign = android.graphics.Paint.Align.CENTER
             this.style = android.graphics.Paint.Style.FILL
-            this.color = fillColor.toArgb()
+            this.color = android.graphics.Color.BLACK
         }
 
-        val yBaseline = -((fillPaint.descent() + fillPaint.ascent()) / 2f)
+        val yBaseline = -((strokePaint.descent() + strokePaint.ascent()) / 2f)
 
-        // Draw outline cutout first, then solid color fill
+        // Always draw the black contour separator first
         canvas.drawText(char, 0f, yBaseline, strokePaint)
-        canvas.drawText(char, 0f, yBaseline, fillPaint)
+
+        if (isAod) {
+            // In AOD / Dim mode: Mask interior with black, then draw glowing wireframe outline
+            canvas.drawText(char, 0f, yBaseline, solidBlackPaint)
+
+            val aodOutlinePaint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                typeface = bubblyAodFont ?: bubblyFont ?: Typeface.DEFAULT_BOLD
+                this.textSize = textSizePx
+                this.textAlign = android.graphics.Paint.Align.CENTER
+                if (bubblyAodFont != null) {
+                    this.style = android.graphics.Paint.Style.FILL
+                } else {
+                    this.style = android.graphics.Paint.Style.STROKE
+                    this.strokeWidth = radius * 0.040f
+                    this.strokeJoin = android.graphics.Paint.Join.ROUND
+                    this.strokeCap = android.graphics.Paint.Cap.ROUND
+                }
+                this.color = fillColor.toArgb()
+            }
+            canvas.drawText(char, 0f, yBaseline, aodOutlinePaint)
+        } else {
+            // In Active mode: Full solid vibrant fill
+            val fillPaint = android.graphics.Paint().apply {
+                isAntiAlias = true
+                typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
+                this.textSize = textSizePx
+                this.textAlign = android.graphics.Paint.Align.CENTER
+                this.style = android.graphics.Paint.Style.FILL
+                this.color = fillColor.toArgb()
+            }
+            canvas.drawText(char, 0f, yBaseline, fillPaint)
+        }
 
         canvas.restore()
     }

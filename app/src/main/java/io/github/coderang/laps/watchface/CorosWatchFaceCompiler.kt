@@ -106,6 +106,31 @@ object CorosWatchFaceCompiler {
         savePng(colonBitmap, File(targetDir, "colon.png"))
         assetCount++
 
+        // 6. Generate Always-On Display (AOD / Dim Standby) assets for AMOLED (e.g. PACE Pro)
+        val aodFont = try {
+            ResourcesCompat.getFont(context, R.font.google_sans_flex_aod)
+        } catch (_: Exception) {
+            font
+        }
+        val aodTimeNumDir = File(targetDir, "aod_time_num").apply { mkdirs() }
+        for (digit in 0..9) {
+            val aodDigitBitmap = renderDigit(
+                digit = digit.toString(),
+                font = aodFont ?: font,
+                textColor = config.palette.primaryColor.toArgb(),
+                fontSizePx = (resolution * 0.38f),
+                hasOutline = (config.style == WatchFaceStyle.PIXEL_BUBBLY),
+                isAod = true
+            )
+            savePng(aodDigitBitmap, File(aodTimeNumDir, "$digit.png"))
+            assetCount++
+        }
+        val aodBgBitmap = Bitmap.createBitmap(resolution, resolution, Bitmap.Config.ARGB_8888)
+        val aodCanvas = Canvas(aodBgBitmap)
+        aodCanvas.drawColor(android.graphics.Color.BLACK)
+        savePng(aodBgBitmap, File(targetDir, "aod_background.png"))
+        assetCount++
+
         // 6. Zip everything into clean COROS package
         val zipFileName = "Laps_${config.style.name}_${config.model.name}_${resolution}x${resolution}.zip"
         val zipFile = File(outputDir, zipFileName)
@@ -246,7 +271,8 @@ object CorosWatchFaceCompiler {
         font: Typeface?,
         textColor: Int,
         fontSizePx: Float,
-        hasOutline: Boolean = false
+        hasOutline: Boolean = false,
+        isAod: Boolean = false
     ): Bitmap {
         val paint = Paint().apply {
             isAntiAlias = true
@@ -254,6 +280,12 @@ object CorosWatchFaceCompiler {
             textSize = fontSizePx
             typeface = font ?: Typeface.DEFAULT_BOLD
             textAlign = Paint.Align.CENTER
+            if (isAod && font != null) {
+                style = Paint.Style.FILL
+            } else if (isAod) {
+                style = Paint.Style.STROKE
+                strokeWidth = fontSizePx * 0.08f
+            }
         }
         val bounds = Rect()
         paint.getTextBounds(digit, 0, digit.length, bounds)

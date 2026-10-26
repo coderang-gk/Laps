@@ -132,6 +132,55 @@ fun WatchFaceStudioScreen(
             }
         }
 
+        // Live BLE Connection Status Banner
+        AnimatedVisibility(visible = bleState == CorosBleManager.BleConnectionState.CONNECTED) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF4CAF50))
+                        )
+                        Column {
+                            Text(
+                                text = "Connected: ${watchInfo.modelName.ifEmpty { "COROS PACE Pro" }}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            if (watchInfo.batteryLevel >= 0) {
+                                Text(
+                                    text = "Watch Battery: ${watchInfo.batteryLevel}%",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                    }
+                    TextButton(onClick = { bleManager.disconnect() }) {
+                        Text("Disconnect", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         // 2. HERO: Photorealistic Watch Canvas Preview
@@ -156,7 +205,38 @@ fun WatchFaceStudioScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Display Mode: Active vs Always-On Display (AOD / Dim Mode)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilterChip(
+                selected = !config.isAodMode,
+                onClick = { config = config.copy(isAodMode = false) },
+                label = { Text("Active ☀️", fontSize = 12.sp, fontWeight = if (!config.isAodMode) FontWeight.Bold else FontWeight.Normal) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            FilterChip(
+                selected = config.isAodMode,
+                onClick = { config = config.copy(isAodMode = true) },
+                label = { Text("Always-On / Dim 🌙", fontSize = 12.sp, fontWeight = if (config.isAodMode) FontWeight.Bold else FontWeight.Normal) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         // 3. Style Selector Carousel
         Text(
@@ -301,13 +381,16 @@ fun WatchFaceStudioScreen(
                         }
                     }
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1.2f),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Text("Export Package", fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = if (bleState == CorosBleManager.BleConnectionState.CONNECTED) "Sync to PACE Pro" else "Export & Sync Package",
+                    fontWeight = FontWeight.SemiBold
+                )
             }
 
             OutlinedButton(
@@ -324,35 +407,54 @@ fun WatchFaceStudioScreen(
                         bleManager.startScan()
                     }
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(0.9f),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Text("Connect Watch", fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = if (bleState == CorosBleManager.BleConnectionState.CONNECTED) "Watch Linked ✓" else "Link Watch",
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(48.dp))
     }
 
-    // Compilation Success Dialog
+    // Compilation & Sync Dialog
     if (showCompilationDialog && compilationResult != null) {
         val res = compilationResult!!
         AlertDialog(
             onDismissRequest = { showCompilationDialog = false },
-            title = { Text("Watch Face Compiled") },
+            title = { Text("Ready to Sync Watch Face") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Successfully generated COROS package:")
-                    Text("• Style: ${res.styleName}", fontWeight = FontWeight.SemiBold)
-                    Text("• Target: ${res.resolution} × ${res.resolution} px")
-                    Text("• Assets: ${res.totalAssets} files (config.txt, info.json, PNG sprites)")
-                    Text("• Output: ${res.zipFile.name}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Pixel Bubbly package built with both Active Display & Always-On (AOD) standby layers for your AMOLED screen.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("• Target: ${res.resolution} × ${res.resolution} px (PACE Pro AMOLED)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("• Package: ${res.zipFile.name}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("• Standby: AOD hollow wireframe included", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    Text(
+                        text = "How to install:\n1. Tap 'Send to COROS App' below.\n2. In COROS App, go to Profile > PACE Pro > Watch Faces > Custom to flash it directly to your watch.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        showCompilationDialog = false
                         try {
                             val uri = FileProvider.getUriForFile(
                                 context,
@@ -364,18 +466,26 @@ fun WatchFaceStudioScreen(
                                 putExtra(Intent.EXTRA_STREAM, uri)
                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share COROS Watch Face"))
+                            context.startActivity(Intent.createChooser(shareIntent, "Send Watch Face to COROS App"))
                         } catch (e: Exception) {
-                            Toast.makeText(context, "Sharing ready at: ${res.zipFile.absolutePath}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "Ready at: ${res.zipFile.absolutePath}", Toast.LENGTH_LONG).show()
                         }
                     }
                 ) {
-                    Text("Share / Save")
+                    Text("Send to COROS App")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCompilationDialog = false }) {
-                    Text("Done")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val corosIntent = context.packageManager.getLaunchIntentForPackage("com.yf.smart.coros.dist")
+                    if (corosIntent != null) {
+                        OutlinedButton(onClick = { context.startActivity(corosIntent) }) {
+                            Text("Open COROS")
+                        }
+                    }
+                    TextButton(onClick = { showCompilationDialog = false }) {
+                        Text("Done")
+                    }
                 }
             }
         )
@@ -409,7 +519,7 @@ fun WatchFaceStudioScreen(
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "Connected to ${watchInfo.modelName.ifEmpty { "COROS Watch" }}",
+                                    text = "Connected to ${watchInfo.modelName.ifEmpty { "COROS PACE Pro" }}",
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
@@ -425,7 +535,7 @@ fun WatchFaceStudioScreen(
                     }
 
                     Text(
-                        text = if (discoveredWatches.isEmpty()) "Scanning for nearby COROS watches..." else "Nearby Watches:",
+                        text = if (discoveredWatches.isEmpty()) "Scanning for nearby COROS watches..." else "Nearby / Paired Watches:",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -439,7 +549,9 @@ fun WatchFaceStudioScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp)
-                                .clickable { bleManager.connectWatch(watch) }
+                                .clickable {
+                                    bleManager.connectWatch(watch)
+                                }
                         ) {
                             Row(
                                 modifier = Modifier
@@ -459,13 +571,13 @@ fun WatchFaceStudioScreen(
                 }
             },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
                         bleManager.stopScan()
                         showBleSheet = false
                     }
                 ) {
-                    Text("Close")
+                    Text(if (bleState == CorosBleManager.BleConnectionState.CONNECTED) "Done & Continue to Sync" else "Close")
                 }
             }
         )

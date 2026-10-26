@@ -121,10 +121,11 @@ enum class ComplicationType(val label: String, val iconDesc: String) {
 
 data class WatchFaceConfig(
     val style: WatchFaceStyle = WatchFaceStyle.PIXEL_BUBBLY,
-    val model: WatchModelPreset = WatchModelPreset.PACE_3,
-    val palette: WatchFacePalette = WatchFacePalette.DYNAMIC_M3,
+    val model: WatchModelPreset = WatchModelPreset.PACE_PRO,
+    val palette: WatchFacePalette = WatchFacePalette.PIXEL_MINT,
     val topComplication: ComplicationType = ComplicationType.ACUTE_LOAD,
     val bottomComplication: ComplicationType = ComplicationType.WEEKLY_MILEAGE,
     val is24HourFormat: Boolean = false,
-    val showSecondsRing: Boolean = true
+    val showSecondsRing: Boolean = true,
+    val isAodMode: Boolean = false
 )
