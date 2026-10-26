@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#F0F4FA"
+        android:pathData="M0,0h108v108h-108z" />
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.68"
+        android:scaleY="0.68">
+        <!-- Lower/Right Offset Track Lap -->
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M48,43 L64,43 A16,16 0 0,1 64,75 L56,75"
+            android:strokeWidth="9.5"
+            android:strokeColor="#7C8BA1"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+
+        <!-- Upper/Left Primary Track Lap -->
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M52,33 L44,33 A16,16 0 0,0 44,65 L60,65"
+            android:strokeWidth="9.5"
+            android:strokeColor="#0B57D0"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+
+        <!-- Leading Pacer Dot -->
+        <path
+            android:fillColor="#E03E3E"
+            android:pathData="M58.2,33 a5.8,5.8 0 1,0 11.6,0 a5.8,5.8 0 1,0 -11.6,0" />
+    </group>
+</vector>

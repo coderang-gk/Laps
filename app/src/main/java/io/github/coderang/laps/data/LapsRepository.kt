@@ -5,6 +5,8 @@ import io.github.coderang.laps.calendar.CalendarSyncManager
 import io.github.coderang.laps.coach.EvoLabAnalyzer
 import io.github.coderang.laps.coach.GeminiCoachClient
 import io.github.coderang.laps.coros.CorosApiClient
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -16,6 +18,7 @@ import java.util.*
 object LapsRepository {
 
     private const val PREFS_NAME = "laps_app_prefs"
+    private const val KEY_CACHED_PAYLOAD_JSON = "cached_payload_json"
     private const val KEY_COROS_EMAIL = "coros_email"
     private const val KEY_COROS_PASSWORD = "coros_password"
     private const val KEY_COROS_TOKEN = "coros_access_token"
@@ -157,7 +160,23 @@ object LapsRepository {
 
     fun getSelectedCalendarId(context: Context): Long {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getLong(KEY_CALENDAR_ID, -1L)
+        val saved = prefs.getLong(KEY_CALENDAR_ID, -1L)
+        // If the user has explicitly selected a calendar, always honor it 100%
+        if (saved > 0L) return saved
+
+        return try {
+            val calendars = CalendarSyncManager.getAvailableCalendars(context)
+            val matched = calendars.find { cal ->
+                val name = cal.displayName.lowercase(Locale.US)
+                name.contains("training") || name.contains("marathon") || name.contains("run")
+            }
+            if (matched != null) {
+                saveSelectedCalendarId(context, matched.id)
+                matched.id
+            } else -1L
+        } catch (_: Exception) {
+            -1L
+        }
     }
 
     fun saveSelectedCalendarId(context: Context, calendarId: Long) {
@@ -179,6 +198,18 @@ object LapsRepository {
             .apply()
     }
 
+    fun getAppTheme(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString("app_theme_mode", "SYSTEM") ?: "SYSTEM"
+    }
+
+    fun saveAppTheme(context: Context, theme: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("app_theme_mode", theme)
+            .apply()
+    }
+
     fun getStyleForTile(context: Context, tileType: ExpressiveTileType): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getInt("style_${tileType.name}", tileType.ordinal)
@@ -193,14 +224,392 @@ object LapsRepository {
 
     private var cachedPayload: LapsPayload = LapsPayload()
 
-    fun getCachedPayload(): LapsPayload = cachedPayload
-
-    fun setCachedPayload(payload: LapsPayload) {
-        cachedPayload = payload
+    fun getCachedPayload(context: Context? = null): LapsPayload {
+        if (!cachedPayload.isRealData && context != null) {
+            val disk = loadPayloadFromDisk(context)
+            if (disk != null) {
+                cachedPayload = disk
+            }
+        }
+        return cachedPayload
     }
 
-    fun resetSamplePayload() {
+    fun setCachedPayload(payload: LapsPayload, context: Context? = null) {
+        cachedPayload = payload
+        if (payload.isRealData && context != null) {
+            savePayloadToDisk(context, payload)
+        }
+    }
+
+    fun resetSamplePayload(context: Context? = null) {
         cachedPayload = LapsPayload()
+        if (context != null) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .remove(KEY_CACHED_PAYLOAD_JSON)
+                .apply()
+        }
+    }
+
+    fun savePayloadToDisk(context: Context, payload: LapsPayload) {
+        try {
+            val root = JSONObject()
+            root.put("updatedLabel", payload.updatedLabel)
+            root.put("isMetricsOnly", payload.isMetricsOnly)
+            root.put("isRealData", payload.isRealData)
+
+            val ath = JSONObject().apply {
+                put("nickname", payload.athlete.nickname)
+                put("rhr", payload.athlete.rhr)
+                put("maxHr", payload.athlete.maxHr)
+                put("lthr", payload.athlete.lthr)
+                put("ltspPace", payload.athlete.ltspPace)
+                put("weightKg", payload.athlete.weightKg)
+            }
+            root.put("athlete", ath)
+
+            val wm = JSONObject().apply {
+                put("actualKm", payload.weeklyMileage.actualKm)
+                put("plannedKm", payload.weeklyMileage.plannedKm)
+                put("expectedKmSoFar", payload.weeklyMileage.expectedKmSoFar)
+                put("expectedCompletionPct", payload.weeklyMileage.expectedCompletionPct)
+                put("remainingKm", payload.weeklyMileage.remainingKm)
+                put("completionPct", payload.weeklyMileage.completionPct)
+                put("runsCompleted", payload.weeklyMileage.runsCompleted)
+                put("runsPlanned", payload.weeklyMileage.runsPlanned)
+                put("avgPace", payload.weeklyMileage.avgPace)
+                put("totalElevationM", payload.weeklyMileage.totalElevationM)
+                val daysArr = JSONArray()
+                payload.weeklyMileage.days.forEach { d ->
+                    val dObj = JSONObject().apply {
+                        put("index", d.index)
+                        put("dayLetter", d.dayLetter)
+                        put("dayName", d.dayName)
+                        put("date", d.date)
+                        put("isToday", d.isToday)
+                        put("actualKm", d.actualKm)
+                        put("plannedKm", d.plannedKm)
+                        put("status", d.status)
+                        put("workoutType", d.workoutType)
+                        put("completionPct", d.completionPct)
+                    }
+                    daysArr.put(dObj)
+                }
+                put("days", daysArr)
+            }
+            root.put("weeklyMileage", wm)
+
+            val tl = JSONObject().apply {
+                put("acuteTl", payload.trainingLoad.acuteTl)
+                put("weeklyTl", payload.trainingLoad.weeklyTl)
+                put("targetTlMin", payload.trainingLoad.targetTlMin)
+                put("targetTlMax", payload.trainingLoad.targetTlMax)
+                put("loadRatioPct", payload.trainingLoad.loadRatioPct)
+                put("statusBadge", payload.trainingLoad.statusBadge)
+                put("rhr", payload.trainingLoad.rhr)
+                put("lthr", payload.trainingLoad.lthr)
+                put("recoveryHours", payload.trainingLoad.recoveryHours)
+                put("readinessScore", payload.trainingLoad.readinessScore)
+                put("lastAerobicTe", payload.trainingLoad.lastAerobicTe)
+                put("lastAnaerobicTe", payload.trainingLoad.lastAnaerobicTe)
+            }
+            root.put("trainingLoad", tl)
+
+            val nw = JSONObject().apply {
+                put("title", payload.nextWorkout.title)
+                put("workoutType", payload.nextWorkout.workoutType)
+                put("date", payload.nextWorkout.date)
+                put("dayBadge", payload.nextWorkout.dayBadge)
+                put("countdown", payload.nextWorkout.countdown)
+                put("targetDistanceKm", payload.nextWorkout.targetDistanceKm)
+                put("targetPace", payload.nextWorkout.targetPace)
+                put("targetHrZone", payload.nextWorkout.targetHrZone)
+                put("watchSynced", payload.nextWorkout.watchSynced)
+            }
+            root.put("nextWorkout", nw)
+
+            val rc = JSONObject().apply {
+                put("raceName", payload.raceCountdown.raceName)
+                put("raceDate", payload.raceCountdown.raceDate)
+                put("daysLeft", payload.raceCountdown.daysLeft)
+                put("currentWeek", payload.raceCountdown.currentWeek)
+                put("totalWeeks", payload.raceCountdown.totalWeeks)
+                put("phase", payload.raceCountdown.phase)
+                put("goalTime", payload.raceCountdown.goalTime)
+                put("goalPace", payload.raceCountdown.goalPace)
+                put("currentLtsp", payload.raceCountdown.currentLtsp)
+                put("currentLthr", payload.raceCountdown.currentLthr)
+                put("paceDeltaSec", payload.raceCountdown.paceDeltaSec)
+                put("readinessTag", payload.raceCountdown.readinessTag)
+            }
+            root.put("raceCountdown", rc)
+
+            val zs = JSONObject().apply {
+                put("aerobicPct", payload.zoneSpectrum.aerobicPct)
+                put("thresholdPct", payload.zoneSpectrum.thresholdPct)
+                put("targetRatio", payload.zoneSpectrum.targetRatio)
+                put("easyAvgHr", payload.zoneSpectrum.easyAvgHr)
+                put("qualityAvgHr", payload.zoneSpectrum.qualityAvgHr)
+                put("z2CeilingHr", payload.zoneSpectrum.z2CeilingHr)
+                put("zoneCreepStatus", payload.zoneSpectrum.zoneCreepStatus)
+            }
+            root.put("zoneSpectrum", zs)
+
+            fun runToJson(r: LastRunData): JSONObject = JSONObject().apply {
+                put("name", r.name)
+                put("date", r.date)
+                put("dayLabel", r.dayLabel)
+                put("distanceKm", r.distanceKm)
+                put("plannedKm", r.plannedKm)
+                put("adherencePct", r.adherencePct)
+                put("verdictBadge", r.verdictBadge)
+                put("durationMinutes", r.durationMinutes)
+                put("avgPace", r.avgPace)
+                put("avgHr", r.avgHr)
+                put("maxHr", r.maxHr)
+                put("cadence", r.cadence)
+                put("maxCadence", r.maxCadence)
+                put("powerWatts", r.powerWatts)
+                put("maxPowerWatts", r.maxPowerWatts)
+                put("strideLengthCm", r.strideLengthCm)
+                put("trainingLoad", r.trainingLoad)
+                put("aerobicTe", r.aerobicTe)
+                put("anaerobicTe", r.anaerobicTe)
+                put("vo2Max", r.vo2Max)
+                put("stamina7d", r.stamina7d)
+                put("bestKmPace", r.bestKmPace)
+                put("elevGainM", r.elevGainM)
+                put("caloriesKcal", r.caloriesKcal)
+                put("physiologyNote", r.physiologyNote)
+                put("coachGuidance", r.coachGuidance)
+                put("aiVerdictHeadline", r.aiVerdictHeadline)
+                put("aiExecutiveSummary", r.aiExecutiveSummary)
+            }
+            root.put("lastRun", runToJson(payload.lastRun))
+            val runsArr = JSONArray()
+            payload.recentRuns.forEach { runsArr.put(runToJson(it)) }
+            root.put("recentRuns", runsArr)
+
+            if (payload.activePlan != null) {
+                val ap = JSONObject().apply {
+                    put("distanceLabel", payload.activePlan.distanceLabel)
+                    put("planWeeks", payload.activePlan.planWeeks)
+                    put("startDateMillis", payload.activePlan.startDateMillis)
+                    put("raceDateMillis", payload.activePlan.raceDateMillis)
+                    put("calendarId", payload.activePlan.calendarId)
+                    put("customRaceName", payload.activePlan.customRaceName)
+                }
+                root.put("activePlan", ap)
+            }
+
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_CACHED_PAYLOAD_JSON, root.toString())
+                .apply()
+        } catch (e: Exception) {
+            android.util.Log.e("LapsRepo", "Failed to cache payload to disk", e)
+        }
+    }
+
+    fun loadPayloadFromDisk(context: Context): LapsPayload? {
+        return try {
+            val jsonStr = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_CACHED_PAYLOAD_JSON, null) ?: return null
+            val root = JSONObject(jsonStr)
+            val updatedLabel = root.optString("updatedLabel", "Just now")
+            val isMetricsOnly = root.optBoolean("isMetricsOnly", false)
+            val isRealData = root.optBoolean("isRealData", false)
+            if (!isRealData) return null
+
+            val athObj = root.optJSONObject("athlete")
+            val athlete = if (athObj != null) {
+                AthleteProfile(
+                    nickname = athObj.optString("nickname", "Runner"),
+                    rhr = athObj.optInt("rhr", 44),
+                    maxHr = athObj.optInt("maxHr", 195),
+                    lthr = athObj.optInt("lthr", 172),
+                    ltspPace = athObj.optString("ltspPace", "4:56 /km"),
+                    weightKg = athObj.optDouble("weightKg", 75.0)
+                )
+            } else AthleteProfile()
+
+            val wmObj = root.optJSONObject("weeklyMileage")
+            val weeklyMileage = if (wmObj != null) {
+                val daysArr = wmObj.optJSONArray("days")
+                val daysList = mutableListOf<DayBarData>()
+                if (daysArr != null) {
+                    for (i in 0 until daysArr.length()) {
+                        val d = daysArr.getJSONObject(i)
+                        daysList.add(
+                            DayBarData(
+                                index = d.optInt("index", i),
+                                dayLetter = d.optString("dayLetter", ""),
+                                dayName = d.optString("dayName", ""),
+                                date = d.optString("date", ""),
+                                isToday = d.optBoolean("isToday", false),
+                                actualKm = d.optDouble("actualKm", 0.0),
+                                plannedKm = d.optDouble("plannedKm", 0.0),
+                                status = d.optString("status", ""),
+                                workoutType = d.optString("workoutType", ""),
+                                completionPct = d.optInt("completionPct", 0)
+                            )
+                        )
+                    }
+                }
+                WeeklyMileageData(
+                    actualKm = wmObj.optDouble("actualKm", 0.0),
+                    plannedKm = wmObj.optDouble("plannedKm", 0.0),
+                    expectedKmSoFar = wmObj.optDouble("expectedKmSoFar", 0.0),
+                    expectedCompletionPct = wmObj.optInt("expectedCompletionPct", 0),
+                    remainingKm = wmObj.optDouble("remainingKm", 0.0),
+                    completionPct = wmObj.optInt("completionPct", 0),
+                    runsCompleted = wmObj.optInt("runsCompleted", 0),
+                    runsPlanned = wmObj.optInt("runsPlanned", 0),
+                    avgPace = wmObj.optString("avgPace", "--:-- /km"),
+                    totalElevationM = wmObj.optInt("totalElevationM", 0),
+                    days = if (daysList.isNotEmpty()) daysList else WeeklyMileageData.defaultDays()
+                )
+            } else WeeklyMileageData()
+
+            val tlObj = root.optJSONObject("trainingLoad")
+            val trainingLoad = if (tlObj != null) {
+                TrainingLoadData(
+                    acuteTl = tlObj.optInt("acuteTl", 0),
+                    weeklyTl = tlObj.optInt("weeklyTl", 0),
+                    targetTlMin = tlObj.optInt("targetTlMin", 0),
+                    targetTlMax = tlObj.optInt("targetTlMax", 0),
+                    loadRatioPct = tlObj.optInt("loadRatioPct", 0),
+                    statusBadge = tlObj.optString("statusBadge", "OPTIMAL"),
+                    rhr = tlObj.optInt("rhr", 0),
+                    lthr = tlObj.optInt("lthr", 0),
+                    recoveryHours = tlObj.optInt("recoveryHours", 0),
+                    readinessScore = tlObj.optInt("readinessScore", 0),
+                    lastAerobicTe = tlObj.optDouble("lastAerobicTe", 0.0),
+                    lastAnaerobicTe = tlObj.optDouble("lastAnaerobicTe", 0.0)
+                )
+            } else TrainingLoadData()
+
+            val nwObj = root.optJSONObject("nextWorkout")
+            val nextWorkout = if (nwObj != null) {
+                NextWorkoutData(
+                    title = nwObj.optString("title", ""),
+                    workoutType = nwObj.optString("workoutType", ""),
+                    date = nwObj.optString("date", ""),
+                    dayBadge = nwObj.optString("dayBadge", ""),
+                    countdown = nwObj.optString("countdown", ""),
+                    targetDistanceKm = nwObj.optDouble("targetDistanceKm", 0.0),
+                    targetPace = nwObj.optString("targetPace", ""),
+                    targetHrZone = nwObj.optString("targetHrZone", ""),
+                    watchSynced = nwObj.optBoolean("watchSynced", false)
+                )
+            } else NextWorkoutData()
+
+            val rcObj = root.optJSONObject("raceCountdown")
+            val raceCountdown = if (rcObj != null) {
+                RaceCountdownData(
+                    raceName = rcObj.optString("raceName", ""),
+                    raceDate = rcObj.optString("raceDate", ""),
+                    daysLeft = rcObj.optInt("daysLeft", 0),
+                    currentWeek = rcObj.optInt("currentWeek", 0),
+                    totalWeeks = rcObj.optInt("totalWeeks", 0),
+                    phase = rcObj.optString("phase", ""),
+                    goalTime = rcObj.optString("goalTime", ""),
+                    goalPace = rcObj.optString("goalPace", ""),
+                    currentLtsp = rcObj.optString("currentLtsp", ""),
+                    currentLthr = rcObj.optInt("currentLthr", 0),
+                    paceDeltaSec = rcObj.optInt("paceDeltaSec", 0),
+                    readinessTag = rcObj.optString("readinessTag", "")
+                )
+            } else RaceCountdownData()
+
+            val zsObj = root.optJSONObject("zoneSpectrum")
+            val zoneSpectrum = if (zsObj != null) {
+                ZoneSpectrumData(
+                    aerobicPct = zsObj.optInt("aerobicPct", 80),
+                    thresholdPct = zsObj.optInt("thresholdPct", 20),
+                    targetRatio = zsObj.optString("targetRatio", "80 / 20"),
+                    easyAvgHr = zsObj.optInt("easyAvgHr", 0),
+                    qualityAvgHr = zsObj.optInt("qualityAvgHr", 0),
+                    z2CeilingHr = zsObj.optInt("z2CeilingHr", 0),
+                    zoneCreepStatus = zsObj.optString("zoneCreepStatus", "OPTIMAL")
+                )
+            } else ZoneSpectrumData()
+
+            fun runFromObj(ro: JSONObject): LastRunData {
+                return LastRunData(
+                    name = ro.optString("name", "Run"),
+                    date = ro.optString("date", ""),
+                    dayLabel = ro.optString("dayLabel", ""),
+                    distanceKm = ro.optDouble("distanceKm", 0.0),
+                    plannedKm = ro.optDouble("plannedKm", 0.0),
+                    adherencePct = ro.optInt("adherencePct", 0),
+                    verdictBadge = ro.optString("verdictBadge", ""),
+                    durationMinutes = ro.optDouble("durationMinutes", 0.0),
+                    avgPace = ro.optString("avgPace", "--:--"),
+                    avgHr = ro.optInt("avgHr", 0),
+                    maxHr = ro.optInt("maxHr", 0),
+                    cadence = ro.optInt("cadence", 0),
+                    maxCadence = ro.optInt("maxCadence", 0),
+                    powerWatts = ro.optInt("powerWatts", 0),
+                    maxPowerWatts = ro.optInt("maxPowerWatts", 0),
+                    strideLengthCm = ro.optInt("strideLengthCm", 0),
+                    trainingLoad = ro.optInt("trainingLoad", 0),
+                    aerobicTe = ro.optDouble("aerobicTe", 0.0),
+                    anaerobicTe = ro.optDouble("anaerobicTe", 0.0),
+                    vo2Max = ro.optInt("vo2Max", 0),
+                    stamina7d = ro.optDouble("stamina7d", 0.0),
+                    bestKmPace = ro.optString("bestKmPace", "--:--"),
+                    elevGainM = ro.optInt("elevGainM", 0),
+                    caloriesKcal = ro.optInt("caloriesKcal", 0),
+                    physiologyNote = ro.optString("physiologyNote", ""),
+                    coachGuidance = ro.optString("coachGuidance", ""),
+                    aiVerdictHeadline = ro.optString("aiVerdictHeadline", ""),
+                    aiExecutiveSummary = ro.optString("aiExecutiveSummary", "")
+                )
+            }
+
+            val lastRunObj = root.optJSONObject("lastRun")
+            val lastRun = if (lastRunObj != null) runFromObj(lastRunObj) else LastRunData.empty()
+
+            val recentArr = root.optJSONArray("recentRuns")
+            val recentList = mutableListOf<LastRunData>()
+            if (recentArr != null) {
+                for (i in 0 until recentArr.length()) {
+                    recentList.add(runFromObj(recentArr.getJSONObject(i)))
+                }
+            }
+
+            val apObj = root.optJSONObject("activePlan")
+            val activePlan = if (apObj != null) {
+                ActivePlanInfo(
+                    distanceLabel = apObj.optString("distanceLabel", "Half Marathon"),
+                    planWeeks = apObj.optInt("planWeeks", 10),
+                    startDateMillis = apObj.optLong("startDateMillis", 0L),
+                    raceDateMillis = apObj.optLong("raceDateMillis", 0L),
+                    calendarId = apObj.optLong("calendarId", -1L),
+                    customRaceName = apObj.optString("customRaceName", "")
+                )
+            } else null
+
+            LapsPayload(
+                updatedLabel = updatedLabel,
+                athlete = athlete,
+                weeklyMileage = weeklyMileage,
+                trainingLoad = trainingLoad,
+                nextWorkout = nextWorkout,
+                zoneSpectrum = zoneSpectrum,
+                raceCountdown = raceCountdown,
+                lastRun = lastRun,
+                missedWorkout = null,
+                activePlan = activePlan,
+                recentRuns = if (recentList.isNotEmpty()) recentList else listOf(lastRun),
+                isMetricsOnly = isMetricsOnly,
+                isRealData = true
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("LapsRepo", "Failed to load payload from disk", e)
+            null
+        }
     }
 
     fun syncOnDevice(context: Context): Result<LapsPayload> {
@@ -208,7 +617,7 @@ object LapsRepository {
         val (email, password) = getCorosCredentials(context)
         val savedRegion = getCorosRegion(context)
         if (token.isBlank() && (email.isBlank() || password.isBlank())) {
-            return Result.success(cachedPayload) // Demo fallback state
+            return Result.success(getCachedPayload(context)) // Demo fallback state
         }
 
         return try {
@@ -303,11 +712,18 @@ object LapsRepository {
                     startMillis = Math.max(mondayMillis - 86400000L, activePlan.startDateMillis),
                     endMillis = Math.min(sundayMillis + 864000000L, activePlan.raceDateMillis + 86400000L)
                 ).filter { it.startMillis >= activePlan.startDateMillis }
+            } else if (calId != -1L) {
+                CalendarSyncManager.getPlannedWorkouts(
+                    context = context,
+                    calendarId = calId,
+                    startMillis = mondayMillis - (7 * 86400000L),
+                    endMillis = sundayMillis + (180 * 86400000L)
+                )
             } else emptyList()
             val gcalPlannedByDate = gcalPlannedList.associateBy { it.dateString }
 
             val hasCorosPlan = corosSchedule != null && (corosSchedule.planName.isNotBlank() || corosWorkouts.isNotEmpty())
-            val hasActivePlanThisWeek = hasConfiguredGCalPlan || hasCorosPlan
+            val hasActivePlanThisWeek = hasConfiguredGCalPlan || hasCorosPlan || gcalPlannedList.isNotEmpty()
             val isMetricsOnly = !hasActivePlanThisWeek
 
             val activitiesByDate = activities.groupBy { it.dateOnly }
@@ -331,9 +747,9 @@ object LapsRepository {
                 val gcalWk = gcalPlannedByDate[dStr]
                 val dayPlannedKm = if (corosWk != null && corosWk.distanceKm > 0) {
                     corosWk.distanceKm
-                } else if (hasConfiguredGCalPlan) {
+                } else {
                     gcalWk?.targetDistanceKm ?: 0.0
-                } else 0.0
+                }
 
                 actualWkKm += dayActualKm
                 plannedWkKm += dayPlannedKm
@@ -351,7 +767,7 @@ object LapsRepository {
                 val workoutTitle = when {
                     dayActs.isNotEmpty() -> dayActs.first().name
                     corosWk != null -> corosWk.name
-                    hasConfiguredGCalPlan && gcalWk != null -> gcalWk.workoutType
+                    gcalWk != null -> gcalWk.title.replace("✅", "").trim()
                     else -> "Rest"
                 }
 
@@ -377,9 +793,7 @@ object LapsRepository {
 
             // 4. Upcoming Workout (from COROS calendar first, then Google Calendar)
             val upcomingCoros = corosWorkouts.firstOrNull { it.dateStr >= todayStr && !it.isCompleted }
-            val upcomingGCal = if (hasConfiguredGCalPlan) {
-                gcalPlannedList.firstOrNull { it.dateString >= todayStr && !it.isCompleted && !it.isSkipped }
-            } else null
+            val upcomingGCal = gcalPlannedList.firstOrNull { it.dateString >= todayStr && !it.isCompleted && !it.isSkipped }
 
             val nwData = if (upcomingCoros != null) {
                 val nowTime = System.currentTimeMillis()
@@ -612,6 +1026,25 @@ object LapsRepository {
                 raceTargetCal.timeInMillis >= todayCal.timeInMillis
             }
 
+            val cleanRaceTitle = raceEvent?.title
+                ?.replace("🏁 RACE DAY: ", "")
+                ?.replace("🏁 RACE DAY:", "")
+                ?.replace("🏁 ", "")
+                ?.trim()
+                ?.ifBlank { "RACE DAY" } ?: "RACE DAY"
+
+            val maxWeekInCal = gcalPlannedList.mapNotNull {
+                Regex("W(\\d+)").find(it.title)?.groupValues?.get(1)?.toIntOrNull()
+            }.maxOrNull() ?: 10
+            val totalWeeks = if (maxWeekInCal > 0) maxWeekInCal else 10
+
+            var currentWeek = 0
+            val thisWeekWorkout = gcalPlannedList.firstOrNull { it.startMillis in mondayMillis..sundayMillis }
+            val weekMatch = if (thisWeekWorkout != null) Regex("W(\\d+)").find(thisWeekWorkout.title) else null
+            if (weekMatch != null) {
+                currentWeek = weekMatch.groupValues[1].toIntOrNull() ?: 0
+            }
+
             val rcData = if (isCorosPlanFuture && corosSchedule != null) {
                 val endDay = corosSchedule.endDayInt
                 val endY = endDay / 10000
@@ -745,20 +1178,17 @@ object LapsRepository {
                     set(Calendar.MILLISECOND, 0)
                 }
                 val diffDays = ((raceCal.timeInMillis - nowCal.timeInMillis) / 86400000L).toInt().coerceAtLeast(0)
-                val cleanRaceTitle = raceEvent.title
-                    .replace("🏁 RACE DAY: ", "")
-                    .replace("🏁 RACE DAY:", "")
-                    .replace("🏁 ", "")
-                    .trim()
-                    .ifBlank { "RACE DAY" }
+                if (currentWeek == 0) {
+                    currentWeek = (totalWeeks - (diffDays / 7)).coerceIn(1, totalWeeks)
+                }
 
                 RaceCountdownData(
                     raceName = cleanRaceTitle.uppercase(),
                     raceDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(raceEvent.startMillis)),
                     daysLeft = diffDays,
-                    currentWeek = 0,
-                    totalWeeks = 0,
-                    phase = "CALENDAR RACE · $diffDays DAYS LEFT",
+                    currentWeek = currentWeek,
+                    totalWeeks = totalWeeks,
+                    phase = if (currentWeek > 0) "WEEK $currentWeek OF $totalWeeks · AEROBIC + THRESHOLD" else "CALENDAR RACE · $diffDays DAYS LEFT",
                     goalTime = when {
                         cleanRaceTitle.contains("5K", ignoreCase = true) -> "0:24:00"
                         cleanRaceTitle.contains("10K", ignoreCase = true) -> "0:49:30"
@@ -791,12 +1221,44 @@ object LapsRepository {
 
             val lastRunData = recentList.firstOrNull() ?: LastRunData.empty()
 
+            val effectivePlan = when {
+                hasConfiguredGCalPlan -> activePlan
+                raceEvent != null && calId != -1L -> {
+                    val totalWeeks = if (maxWeekInCal > 0) maxWeekInCal else 10
+                    val startMillis = mondayMillis - ((currentWeek.coerceAtLeast(1) - 1) * 7 * 86400000L)
+                    ActivePlanInfo(
+                        distanceLabel = if (cleanRaceTitle.contains("MARATHON", ignoreCase = true) && !cleanRaceTitle.contains("HALF", ignoreCase = true)) "Marathon" else "Half Marathon",
+                        planWeeks = totalWeeks,
+                        startDateMillis = startMillis,
+                        raceDateMillis = raceEvent.startMillis,
+                        calendarId = calId,
+                        customRaceName = cleanRaceTitle
+                    )
+                }
+                corosSchedule != null && corosSchedule.planName.isNotBlank() -> {
+                    ActivePlanInfo(
+                        distanceLabel = corosSchedule.planName,
+                        planWeeks = 10,
+                        startDateMillis = mondayMillis,
+                        raceDateMillis = mondayMillis + 35 * 86400000L,
+                        calendarId = -1L,
+                        customRaceName = corosSchedule.planName
+                    )
+                }
+                else -> null
+            }
+
+            if (effectivePlan != null) {
+                saveActivePlan(context, effectivePlan)
+            }
+
             val payload = LapsPayload(
                 updatedLabel = SimpleDateFormat("h:mm a", Locale.US).format(Date()),
                 athlete = AthleteProfile(profile.nickname, profile.rhr, profile.maxHr, profile.lthr, profile.ltspPace, profile.weightKg),
                 weeklyMileage = WeeklyMileageData(
                     actualKm = actualWkKm,
                     plannedKm = plannedWkKm,
+                    remainingKm = Math.max(0.0, plannedWkKm - actualWkKm),
                     completionPct = completionPct,
                     runsCompleted = runsDone,
                     runsPlanned = if (hasActivePlanThisWeek) daysMatrix.count { it.plannedKm > 0 } else runsDone,
@@ -823,12 +1285,14 @@ object LapsRepository {
                 zoneSpectrum = ZoneSpectrumData(aerobicPct = aeroPct, thresholdPct = 100 - aeroPct),
                 lastRun = lastRunData,
                 missedWorkout = missedWorkoutData,
-                activePlan = if (hasConfiguredGCalPlan) activePlan else (if (corosSchedule != null && corosSchedule.planName.isNotBlank()) ActivePlanInfo(distanceLabel = corosSchedule.planName, planWeeks = 10, startDateMillis = mondayMillis, raceDateMillis = mondayMillis + 35 * 86400000L, calendarId = -1L, customRaceName = corosSchedule.planName) else null),
+                activePlan = effectivePlan,
                 recentRuns = recentList,
-                isMetricsOnly = isMetricsOnly
+                isMetricsOnly = isMetricsOnly,
+                isRealData = true
             )
 
             cachedPayload = payload
+            savePayloadToDisk(context, payload)
             Result.success(payload)
         } catch (e: Exception) {
             Result.failure(e)
