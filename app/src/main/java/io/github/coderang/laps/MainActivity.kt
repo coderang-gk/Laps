@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -2403,6 +2404,19 @@ private fun StockPixelWidgetCard(
     }
 }
 
+@Composable
+private fun LapsAppLogo(
+    modifier: Modifier = Modifier,
+    isDark: Boolean = isSystemInDarkTheme()
+) {
+    val logoRes = if (isDark) R.drawable.ic_laps_logo else R.drawable.ic_laps_logo_light
+    Image(
+        painter = painterResource(id = logoRes),
+        contentDescription = "Laps Logo",
+        modifier = modifier.clip(RoundedCornerShape(16.dp))
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LapsOnboardingDialog(
@@ -2431,20 +2445,7 @@ private fun LapsOnboardingDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(56.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "L",
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
+                LapsAppLogo(modifier = Modifier.size(64.dp))
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "Welcome to Laps",
