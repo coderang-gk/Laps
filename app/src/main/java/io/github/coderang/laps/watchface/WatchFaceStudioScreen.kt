@@ -2,6 +2,7 @@ package io.github.coderang.laps.watchface
 
 import android.Manifest
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -415,6 +416,38 @@ fun WatchFaceStudioScreen(
                     fontWeight = FontWeight.SemiBold
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Direct Gallery Wallpaper Export for COROS App Custom Watch Face picker
+        OutlinedButton(
+            onClick = {
+                scope.launch {
+                    try {
+                        val bitmap = CorosWatchFaceCompiler.renderFullPreviewBitmap(context, config, 800)
+                        val filename = "PixelBubbly_${System.currentTimeMillis()}.png"
+                        val values = android.content.ContentValues().apply {
+                            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, filename)
+                            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                            put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES)
+                        }
+                        val uri = context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                        if (uri != null) {
+                            context.contentResolver.openOutputStream(uri)?.use { out ->
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                            }
+                            Toast.makeText(context, "Saved to Gallery! Select it in COROS App > Custom Watch Face", Toast.LENGTH_LONG).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Saved: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text("Save Image to Photos (for COROS Custom Face)", fontWeight = FontWeight.SemiBold)
         }
 
         Spacer(modifier = Modifier.height(48.dp))

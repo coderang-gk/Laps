@@ -32,6 +32,98 @@ object CorosWatchFaceCompiler {
         val styleName: String
     )
 
+    fun renderFullPreviewBitmap(context: Context, config: WatchFaceConfig, resolution: Int = 800): Bitmap {
+        val bitmap = Bitmap.createBitmap(resolution, resolution, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val center = resolution / 2f
+        val radius = center * 0.94f
+
+        val bgPaint = Paint().apply {
+            color = if (config.isAodMode) android.graphics.Color.BLACK else config.palette.backgroundColor.toArgb()
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(center, center, center, bgPaint)
+
+        val bubblyFont = resolveTypeface(context, config)
+        val aodFont = try { ResourcesCompat.getFont(context, R.font.google_sans_flex_aod) } catch (_: Exception) { bubblyFont }
+        val font = if (config.isAodMode) (aodFont ?: bubblyFont) else bubblyFont
+
+        val textSizePx = radius * 0.88f
+        val xSpread = radius * 0.235f
+        val ySpread = radius * 0.275f
+
+        val (c1, c2, c3, c4) = when (config.palette) {
+            WatchFacePalette.OBSIDIAN -> listOf(config.palette.primaryColor, config.palette.secondaryColor, config.palette.secondaryColor, config.palette.primaryColor)
+            WatchFacePalette.PIXEL_MINT -> listOf(androidx.compose.ui.graphics.Color(0xFF8DE7D6), androidx.compose.ui.graphics.Color(0xFFA8B4FD), androidx.compose.ui.graphics.Color(0xFFA8B4FD), androidx.compose.ui.graphics.Color(0xFF8DE7D6))
+            WatchFacePalette.DYNAMIC_M3 -> listOf(androidx.compose.ui.graphics.Color(0xFF8DE7D6), androidx.compose.ui.graphics.Color(0xFFA8B4FD), androidx.compose.ui.graphics.Color(0xFFA8B4FD), androidx.compose.ui.graphics.Color(0xFF8DE7D6))
+            else -> listOf(config.palette.primaryColor, config.palette.secondaryColor, config.palette.secondaryColor, config.palette.primaryColor)
+        }
+
+        fun drawInterlockingDigit(char: String, fillColor: Int, xOff: Float, yOff: Float) {
+            canvas.save()
+            canvas.translate(center + xOff, center + yOff)
+
+            val strokePaint = Paint().apply {
+                isAntiAlias = true
+                typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
+                this.textSize = textSizePx
+                this.textAlign = Paint.Align.CENTER
+                this.style = Paint.Style.STROKE
+                this.strokeWidth = radius * 0.082f
+                this.strokeJoin = Paint.Join.ROUND
+                this.strokeCap = Paint.Cap.ROUND
+                this.color = android.graphics.Color.BLACK
+            }
+            val yBaseline = -((strokePaint.descent() + strokePaint.ascent()) / 2f)
+            canvas.drawText(char, 0f, yBaseline, strokePaint)
+
+            if (config.isAodMode) {
+                val blackPaint = Paint().apply {
+                    isAntiAlias = true
+                    typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
+                    this.textSize = textSizePx
+                    this.textAlign = Paint.Align.CENTER
+                    this.style = Paint.Style.FILL
+                    this.color = android.graphics.Color.BLACK
+                }
+                canvas.drawText(char, 0f, yBaseline, blackPaint)
+
+                val aodPaint = Paint().apply {
+                    isAntiAlias = true
+                    typeface = font ?: Typeface.DEFAULT_BOLD
+                    this.textSize = textSizePx
+                    this.textAlign = Paint.Align.CENTER
+                    if (aodFont != null) {
+                        this.style = Paint.Style.FILL
+                    } else {
+                        this.style = Paint.Style.STROKE
+                        this.strokeWidth = radius * 0.040f
+                    }
+                    this.color = fillColor
+                }
+                canvas.drawText(char, 0f, yBaseline, aodPaint)
+            } else {
+                val fillPaint = Paint().apply {
+                    isAntiAlias = true
+                    typeface = font ?: Typeface.DEFAULT_BOLD
+                    this.textSize = textSizePx
+                    this.textAlign = Paint.Align.CENTER
+                    this.style = Paint.Style.FILL
+                    this.color = fillColor
+                }
+                canvas.drawText(char, 0f, yBaseline, fillPaint)
+            }
+            canvas.restore()
+        }
+
+        drawInterlockingDigit("0", c1.toArgb(), -xSpread, -ySpread)
+        drawInterlockingDigit("3", c2.toArgb(), xSpread, -ySpread)
+        drawInterlockingDigit("0", c3.toArgb(), -xSpread, ySpread)
+        drawInterlockingDigit("0", c4.toArgb(), xSpread, ySpread)
+
+        return bitmap
+    }
+
     fun compile(
         context: Context,
         config: WatchFaceConfig,
