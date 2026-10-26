@@ -1,7 +1,11 @@
 package io.github.coderang.laps.watchface
 
+import android.Manifest
 import android.content.Intent
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -83,6 +87,23 @@ fun WatchFaceStudioScreen(
     val bleState by bleManager.connectionState.collectAsState()
     val discoveredWatches by bleManager.discoveredWatches.collectAsState()
     val watchInfo by bleManager.watchInfo.collectAsState()
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val canScan = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions[Manifest.permission.BLUETOOTH_SCAN] == true &&
+            permissions[Manifest.permission.BLUETOOTH_CONNECT] == true
+        } else {
+            true
+        }
+        if (canScan) {
+            showBleSheet = true
+            bleManager.startScan()
+        } else {
+            Toast.makeText(context, "Bluetooth permission required to connect watch", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column(
         modifier = modifier
@@ -291,8 +312,17 @@ fun WatchFaceStudioScreen(
 
             OutlinedButton(
                 onClick = {
-                    showBleSheet = true
-                    bleManager.startScan()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.BLUETOOTH_SCAN,
+                                Manifest.permission.BLUETOOTH_CONNECT
+                            )
+                        )
+                    } else {
+                        showBleSheet = true
+                        bleManager.startScan()
+                    }
                 },
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(14.dp)

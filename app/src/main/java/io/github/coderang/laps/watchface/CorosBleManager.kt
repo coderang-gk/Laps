@@ -76,10 +76,20 @@ class CorosBleManager(private val context: Context) {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val device = result.device ?: return
-            val name = try { device.name ?: "Unknown Watch" } catch (_: SecurityException) { "COROS Watch" }
+            val scanRecordName = result.scanRecord?.deviceName
+            val name = try {
+                device.name ?: scanRecordName ?: "Unknown Device"
+            } catch (_: SecurityException) {
+                scanRecordName ?: "COROS Watch"
+            }
 
-            // Filter for COROS watches or advertising devices
-            if (name.contains("COROS", ignoreCase = true) || name.contains("PACE", ignoreCase = true)) {
+            // Filter for COROS watches (PACE, APEX, VERTIX)
+            val isCoros = name.contains("COROS", ignoreCase = true) ||
+                    name.contains("PACE", ignoreCase = true) ||
+                    name.contains("APEX", ignoreCase = true) ||
+                    name.contains("VERTIX", ignoreCase = true)
+
+            if (isCoros) {
                 val discovered = DiscoveredWatch(
                     name = name,
                     address = device.address,
@@ -111,7 +121,28 @@ class CorosBleManager(private val context: Context) {
         }
 
         val scanner = adapter.bluetoothLeScanner ?: return
-        _discoveredWatches.value = emptyList()
+
+        // Pre-populate with already paired/bonded COROS devices
+        val bonded = try {
+            adapter.bondedDevices?.filter {
+                val n = it.name ?: ""
+                n.contains("COROS", ignoreCase = true) ||
+                        n.contains("PACE", ignoreCase = true) ||
+                        n.contains("APEX", ignoreCase = true) ||
+                        n.contains("VERTIX", ignoreCase = true)
+            }?.map {
+                DiscoveredWatch(
+                    name = it.name ?: "COROS Watch (Paired)",
+                    address = it.address,
+                    rssi = -45,
+                    device = it
+                )
+            } ?: emptyList()
+        } catch (_: SecurityException) {
+            emptyList()
+        }
+
+        _discoveredWatches.value = bonded
         _connectionState.value = BleConnectionState.SCANNING
 
         val settings = ScanSettings.Builder()
