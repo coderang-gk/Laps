@@ -502,8 +502,9 @@ private fun MainAppScaffold(
                     onClick = { onSectionSelected(0) },
                     icon = {
                         Icon(
-                            imageVector = rememberHubVector(),
-                            contentDescription = "Training Hub"
+                            painter = painterResource(id = R.drawable.ic_laps_dock_icon),
+                            contentDescription = "Training Hub",
+                            modifier = Modifier.size(24.dp)
                         )
                     },
                     label = {
