@@ -42,7 +42,7 @@ object LapsWidgetUpdateHelper {
     }
 
     fun renderAllFromCache(context: Context) {
-        renderAllWithPayload(context, LapsRepository.getCachedPayload())
+        renderAllWithPayload(context, LapsRepository.getCachedPayload(context))
     }
 
     private fun renderAllWithPayload(context: Context, payload: LapsPayload) {
@@ -61,7 +61,7 @@ object LapsWidgetUpdateHelper {
         manager: AppWidgetManager,
         appWidgetId: Int,
         tileType: ExpressiveTileType,
-        payload: LapsPayload = LapsRepository.getCachedPayload()
+        payload: LapsPayload = LapsRepository.getCachedPayload(context)
     ) {
         val options = manager.getAppWidgetOptions(appWidgetId)
         val density = context.resources.displayMetrics.density

@@ -22,12 +22,13 @@ object ExpressiveWidgetRenderer {
         payload: LapsPayload,
         widthPx: Int,
         heightPx: Int,
-        styleIndexOverride: Int? = null
+        styleIndexOverride: Int? = null,
+        forcedTheme: String? = null
     ): Bitmap {
         val size = min(widthPx.coerceAtLeast(360), heightPx.coerceAtLeast(360)).coerceAtMost(900)
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        val p = ExpressiveTheme.getPalette(context)
+        val p = ExpressiveTheme.getPalette(context, forcedTheme)
 
         val styleIdx = styleIndexOverride ?: tileType.ordinal
         val s = size.toFloat()

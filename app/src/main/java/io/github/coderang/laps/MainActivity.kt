@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -150,7 +151,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val context = LocalContext.current
-            val colorScheme = ExpressiveTheme.getComposeColorScheme(context)
+            var appTheme by remember { mutableStateOf(LapsRepository.getAppTheme(context)) }
+            val colorScheme = ExpressiveTheme.getComposeColorScheme(context, appTheme)
 
             val trigger = oauthRefreshTrigger
             var payload by remember(trigger) { mutableStateOf(LapsRepository.getCachedPayload(context)) }
@@ -312,6 +314,12 @@ class MainActivity : ComponentActivity() {
                     AppScreen.SETTINGS -> {
                         LapsSettingsScreen(
                             payload = payload,
+                            currentTheme = appTheme,
+                            onThemeChange = { newTheme ->
+                                appTheme = newTheme
+                                LapsRepository.saveAppTheme(context, newTheme)
+                                LapsWidgetUpdateHelper.renderAllFromCache(context)
+                            },
                             onNavigateBack = { currentScreen = AppScreen.MAIN },
                             onSaved = {
                                 if (!LapsRepository.hasCredentials(context)) {
@@ -2335,15 +2343,17 @@ private fun StockPixelWidgetCard(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val isDark = isSystemInDarkTheme()
-    val bitmap = remember(item.styleIndex, payload, isDark) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val currentTheme = if (isDark) "DARK" else "LIGHT"
+    val bitmap = remember(item.styleIndex, payload, currentTheme) {
         ExpressiveWidgetRenderer.renderTileBitmap(
             context = context,
             tileType = item.slot,
             payload = payload,
             widthPx = 520,
             heightPx = 520,
-            styleIndexOverride = item.styleIndex
+            styleIndexOverride = item.styleIndex,
+            forcedTheme = currentTheme
         )
     }
 
@@ -2431,7 +2441,7 @@ private fun StockPixelWidgetCard(
 @Composable
 private fun LapsAppLogo(
     modifier: Modifier = Modifier,
-    isDark: Boolean = isSystemInDarkTheme()
+    isDark: Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 ) {
     val logoRes = if (isDark) R.drawable.ic_laps_logo else R.drawable.ic_laps_logo_light
     Image(
@@ -3077,6 +3087,8 @@ private fun LapsOnboardingScreen(
 @Composable
 private fun LapsSettingsScreen(
     payload: LapsPayload,
+    currentTheme: String,
+    onThemeChange: (String) -> Unit,
     onNavigateBack: () -> Unit,
     onSaved: () -> Unit,
     onOpenPlanHub: () -> Unit
@@ -3088,6 +3100,8 @@ private fun LapsSettingsScreen(
     val savedCalId = remember { LapsRepository.getSelectedCalendarId(context) }
     val savedGemini = remember { LapsRepository.getGeminiKey(context) }
     val activePlan = payload.activePlan ?: remember { LapsRepository.getActivePlan(context) }
+
+    var appIconStyle by remember { mutableStateOf(LapsRepository.getAppIconStyle(context)) }
 
     var token by remember { mutableStateOf(savedToken) }
     var selectedRegion by remember { mutableStateOf(savedRegion) }
@@ -3585,6 +3599,219 @@ private fun LapsSettingsScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Build Training Plan")
+                        }
+                    }
+                }
+            }
+
+            // Appearance & Theme Card
+            OutlinedCard(
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "APPEARANCE & THEME",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Switch between system auto-adaptation, dedicated light mode, or stealth dark mode, and customize your home screen launcher icon.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "App Theme",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 3-way Segmented Theme Selector
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "SYSTEM" to "System",
+                            "LIGHT" to "Light",
+                            "DARK" to "Dark"
+                        ).forEach { (themeKey, label) ->
+                            val isSelected = currentTheme == themeKey
+                            Surface(
+                                onClick = { onThemeChange(themeKey) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text(
+                        text = "Home Screen Launcher Icon",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Choose your launcher icon style. The home screen launcher will adapt immediately.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Launcher Icon Selection Cards
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Light Mode Icon Option
+                        val isLightIconSelected = appIconStyle == "LIGHT"
+                        Surface(
+                            onClick = {
+                                appIconStyle = "LIGHT"
+                                LapsRepository.setAppIconStyle(context, "LIGHT")
+                                Toast.makeText(context, "Launcher icon updated to Electric Athletic (Light)", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isLightIconSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.35f),
+                            border = if (isLightIconSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_laps_logo_light),
+                                    contentDescription = "Electric Athletic (Light)",
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "Electric Athletic",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
+                                    text = "Ice White / Royal",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                if (isLightIconSelected) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ) {
+                                        Text(
+                                            text = "ACTIVE",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 9.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = "Tap to set",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // Dark Mode Icon Option
+                        val isDarkIconSelected = appIconStyle == "DARK"
+                        Surface(
+                            onClick = {
+                                appIconStyle = "DARK"
+                                LapsRepository.setAppIconStyle(context, "DARK")
+                                Toast.makeText(context, "Launcher icon updated to EvoLab Stealth (Dark)", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isDarkIconSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.35f),
+                            border = if (isDarkIconSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_laps_logo),
+                                    contentDescription = "EvoLab Stealth (Dark)",
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "EvoLab Stealth",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
+                                    text = "Titanium / Cyan",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                if (isDarkIconSelected) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ) {
+                                        Text(
+                                            text = "ACTIVE",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 9.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = "Tap to set",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }
