@@ -38,7 +38,7 @@ Unlike solutions requiring self-hosted Python servers, webhook relays, or enterp
 
 ## Screenshots
 
-| <img width="260" src="assets/screenshot_hub.jpg"> | <img width="260" src="assets/screenshot_daily_breakdown.jpg"> | <img width="260" src="assets/screenshot_widgets_homescreen.jpg"> |
+| <img width="260" src="assets/screenshot_training_hub.jpg"> | <img width="260" src="assets/screenshot_daily_breakdown.jpg"> | <img width="260" src="assets/screenshot_widgets_homescreen.jpg"> |
 |:---:|:---:|:---:|
 | **Training Hub Dashboard** | **Interactive 7-Day Breakdown** | **Sculptural Home Screen Widgets** |
 
