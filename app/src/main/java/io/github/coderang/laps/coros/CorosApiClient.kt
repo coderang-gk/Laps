@@ -151,10 +151,12 @@ class CorosApiClient(
                     val regionId = data.optInt("regionId", 0)
 
                     // Safely align active regional endpoint if COROS returns home cluster index
+                    // COROS Cluster IDs: 1/0=Global, 2=China, 3=Europe, 4=Singapore
                     val resolvedRegion = when (regionId) {
-                        2 -> "teameuapi.coros.com"
-                        3 -> "teamcnapi.coros.com"
-                        1 -> "teamapi.coros.com"
+                        3 -> "teameuapi.coros.com"
+                        2 -> "teamcnapi.coros.com"
+                        4 -> "teamsgapi.coros.com"
+                        1, 0 -> "teamapi.coros.com"
                         else -> this.region
                     }
                     this.region = resolvedRegion

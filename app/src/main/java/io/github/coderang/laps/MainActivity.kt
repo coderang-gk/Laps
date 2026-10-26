@@ -2297,12 +2297,13 @@ private fun LapsOnboardingDialog(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     listOf(
                         "teamapi.coros.com" to "Global / US",
                         "teameuapi.coros.com" to "Europe",
+                        "teamsgapi.coros.com" to "Singapore / Asia",
                         "teamcnapi.coros.com" to "China"
                     ).forEach { (reg, label) ->
                         FilterChip(
@@ -2867,12 +2868,13 @@ private fun LapsSettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         listOf(
                             "teamapi.coros.com" to "Global / US",
                             "teameuapi.coros.com" to "Europe",
+                            "teamsgapi.coros.com" to "Singapore / Asia",
                             "teamcnapi.coros.com" to "China"
                         ).forEach { (reg, label) ->
                             FilterChip(
