@@ -134,8 +134,20 @@ object CorosWatchFaceCompiler {
         val stagingDir = File(outputDir, "staging_${System.currentTimeMillis()}").apply { mkdirs() }
         val targetDir = File(stagingDir, folderName).apply { mkdirs() }
 
-        // 1. Generate info.json
+        // 1. Generate info.json conforming to official COROS & CorosLink DIY template contracts
+        val templateId = when (resolution) {
+            416 -> 416901
+            260 -> 260902
+            240 -> 240901
+            else -> 250601
+        }
         val infoJson = JSONObject().apply {
+            put("m_name", config.style.title)
+            put("m_app", folderName)
+            put("m_preview", "watchface_customize.png")
+            put("o_template_id", templateId)
+            put("o_diy_version", 1)
+            put("o_wf_ver", 0)
             put("name", config.style.title)
             put("model", config.model.modelName)
             put("resolution", "${resolution}x${resolution}")
@@ -145,6 +157,11 @@ object CorosWatchFaceCompiler {
             put("generator", "Laps CorosWatchFaceCompiler")
         }
         File(stagingDir, "info.json").writeText(infoJson.toString(2))
+
+        // 1.1 Render watchface_customize.png (required by CorosLink Studio import)
+        val previewBitmap = renderFullPreviewBitmap(context, config, resolution = 800)
+        savePng(previewBitmap, File(stagingDir, "watchface_customize.png"))
+        savePng(previewBitmap, File(targetDir, "watchface_customize.png"))
 
         // 2. Generate config.txt
         val configText = buildString {
@@ -162,6 +179,21 @@ object CorosWatchFaceCompiler {
             appendLine("[date_format] = EEE_MMM_D")
         }
         File(targetDir, "config.txt").writeText(configText)
+
+        // 2.1 Generate AODconfig.txt (for Always-On Display / Dim Standby)
+        val aodConfigText = buildString {
+            appendLine("// Laps COROS Always-On Display Standby Configuration")
+            appendLine("[watchface_name] = ${config.style.title} AOD")
+            appendLine("[target_model] = ${config.model.modelName}")
+            appendLine("[bg_color] = 0x000000")
+            appendLine("[background_icon] = aod_background.png")
+            appendLine("[background_icon_pos] = {0,0}")
+            appendLine("[time_num_dir] = aod_time_num")
+            val yOffset = (resolution * 0.38f).toInt()
+            val xOffset = (resolution * 0.16f).toInt()
+            appendLine("[time_num_pos] = {$xOffset,$yOffset}")
+        }
+        File(targetDir, "AODconfig.txt").writeText(aodConfigText)
 
         // 3. Render background.png
         val bgBitmap = renderBackground(config, resolution)

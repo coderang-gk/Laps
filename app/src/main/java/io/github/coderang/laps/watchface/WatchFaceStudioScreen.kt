@@ -43,12 +43,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -84,6 +86,7 @@ fun WatchFaceStudioScreen(
     var compilationResult by remember { mutableStateOf<CorosWatchFaceCompiler.CompilationResult?>(null) }
     var showCompilationDialog by remember { mutableStateOf(false) }
     var showBleSheet by remember { mutableStateOf(false) }
+    var showDirectSyncDialog by remember { mutableStateOf(false) }
 
     val bleState by bleManager.connectionState.collectAsState()
     val discoveredWatches by bleManager.discoveredWatches.collectAsState()
@@ -365,7 +368,7 @@ fun WatchFaceStudioScreen(
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        // 5. Actions: Compile & Direct BLE Sync
+        // 5. Actions: Direct BLE Sync & Package Export
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -373,23 +376,40 @@ fun WatchFaceStudioScreen(
             Button(
                 onClick = {
                     scope.launch {
-                        try {
-                            val result = CorosWatchFaceCompiler.compile(context, config)
-                            compilationResult = result
-                            showCompilationDialog = true
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Compilation failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        if (bleState == CorosBleManager.BleConnectionState.CONNECTED) {
+                            showDirectSyncDialog = true
+                            val binBytes = try {
+                                context.assets.open("watchfaces/pixel_bubbly_pace_pro.bin").readBytes()
+                            } catch (e: Exception) {
+                                null
+                            }
+                            if (binBytes != null) {
+                                bleManager.directSyncWatchface(binBytes)
+                            } else {
+                                Toast.makeText(context, "Watch face binary asset not found", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                permissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.BLUETOOTH_SCAN,
+                                        Manifest.permission.BLUETOOTH_CONNECT
+                                    )
+                                )
+                            }
+                            showDirectSyncDialog = true
+                            bleManager.startScan()
                         }
                     }
                 },
-                modifier = Modifier.weight(1.2f),
+                modifier = Modifier.weight(1.3f),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
                 Text(
-                    text = if (bleState == CorosBleManager.BleConnectionState.CONNECTED) "Sync to PACE Pro" else "Export & Sync Package",
+                    text = if (bleState == CorosBleManager.BleConnectionState.CONNECTED) "⚡ Sync to PACE Pro" else "Connect & Sync Watch",
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -408,14 +428,35 @@ fun WatchFaceStudioScreen(
                         bleManager.startScan()
                     }
                 },
-                modifier = Modifier.weight(0.9f),
+                modifier = Modifier.weight(0.8f),
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Text(
-                    text = if (bleState == CorosBleManager.BleConnectionState.CONNECTED) "Watch Linked ✓" else "Link Watch",
+                    text = if (bleState == CorosBleManager.BleConnectionState.CONNECTED) "Linked ✓" else "Link BLE",
                     fontWeight = FontWeight.SemiBold
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Export ZIP Package Option
+        OutlinedButton(
+            onClick = {
+                scope.launch {
+                    try {
+                        val result = CorosWatchFaceCompiler.compile(context, config)
+                        compilationResult = result
+                        showCompilationDialog = true
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Compilation failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text("Export Archive Package (ZIP)", fontWeight = FontWeight.SemiBold)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -518,6 +559,163 @@ fun WatchFaceStudioScreen(
                     }
                     TextButton(onClick = { showCompilationDialog = false }) {
                         Text("Done")
+                    }
+                }
+            }
+        )
+    }
+
+    // Direct Bluetooth LE Watch Face Transfer Dialog
+    if (showDirectSyncDialog) {
+        val syncProg by bleManager.syncProgress.collectAsState()
+
+        LaunchedEffect(bleState) {
+            if (bleState == CorosBleManager.BleConnectionState.CONNECTED && syncProg is CorosBleManager.BleSyncProgress.Idle) {
+                val binBytes = try {
+                    context.assets.open("watchfaces/pixel_bubbly_pace_pro.bin").readBytes()
+                } catch (e: Exception) {
+                    null
+                }
+                if (binBytes != null) {
+                    bleManager.directSyncWatchface(binBytes)
+                }
+            }
+        }
+
+        LaunchedEffect(discoveredWatches) {
+            if (showDirectSyncDialog && bleState == CorosBleManager.BleConnectionState.SCANNING) {
+                val watch = discoveredWatches.firstOrNull {
+                    it.name.contains("COROS", ignoreCase = true) || it.name.contains("PACE", ignoreCase = true)
+                }
+                if (watch != null) {
+                    bleManager.connectWatch(watch)
+                }
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = {
+                if (syncProg !is CorosBleManager.BleSyncProgress.Transferring) {
+                    showDirectSyncDialog = false
+                }
+            },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Direct PACE Pro Sync")
+                    if (bleState == CorosBleManager.BleConnectionState.CONNECTING ||
+                        syncProg is CorosBleManager.BleSyncProgress.QueryingSlots ||
+                        syncProg is CorosBleManager.BleSyncProgress.Transferring ||
+                        syncProg is CorosBleManager.BleSyncProgress.Verifying
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (bleState == CorosBleManager.BleConnectionState.SCANNING) {
+                        Text("Searching for nearby COROS PACE Pro...")
+                    } else if (bleState == CorosBleManager.BleConnectionState.CONNECTING) {
+                        Text("Establishing secure BLE link with COROS PACE Pro AF3909...")
+                    } else if (bleState != CorosBleManager.BleConnectionState.CONNECTED) {
+                        Text("Watch is not connected.", color = MaterialTheme.colorScheme.error)
+                    } else {
+                        when (val s = syncProg) {
+                            is CorosBleManager.BleSyncProgress.Idle -> {
+                                Text("Starting watch face transfer pipeline...")
+                            }
+                            is CorosBleManager.BleSyncProgress.Connecting -> {
+                                Text(s.msg)
+                            }
+                            is CorosBleManager.BleSyncProgress.QueryingSlots -> {
+                                Text("Reading watch face inventory (Command 0x96)...")
+                            }
+                            is CorosBleManager.BleSyncProgress.Transferring -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = "Flashing watch face: ${s.percent}%",
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    LinearProgressIndicator(
+                                        progress = { s.percent / 100f },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                    )
+                                    Text(
+                                        text = "${s.sentBytes / 1024} KB / ${s.totalBytes / 1024} KB transferred via BLE",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            is CorosBleManager.BleSyncProgress.Verifying -> {
+                                Text("Verifying installation on PACE Pro...")
+                            }
+                            is CorosBleManager.BleSyncProgress.Success -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = "✅ Synced Successfully!",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "Pixel Bubbly (Normal Display & Always-On AOD Standby) is now running on your COROS PACE Pro (Slot ${s.slot})!",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                            is CorosBleManager.BleSyncProgress.Failed -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        text = "❌ Sync Error",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    Text(
+                                        text = s.error,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (syncProg is CorosBleManager.BleSyncProgress.Success) {
+                    Button(onClick = { showDirectSyncDialog = false }) {
+                        Text("Done")
+                    }
+                } else if (syncProg is CorosBleManager.BleSyncProgress.Failed) {
+                    Button(onClick = {
+                        scope.launch {
+                            val binBytes = try {
+                                context.assets.open("watchfaces/pixel_bubbly_pace_pro.bin").readBytes()
+                            } catch (e: Exception) {
+                                null
+                            }
+                            if (binBytes != null) {
+                                bleManager.directSyncWatchface(binBytes)
+                            }
+                        }
+                    }) {
+                        Text("Retry")
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { showDirectSyncDialog = false },
+                        enabled = syncProg !is CorosBleManager.BleSyncProgress.Transferring
+                    ) {
+                        Text("Cancel")
                     }
                 }
             }
