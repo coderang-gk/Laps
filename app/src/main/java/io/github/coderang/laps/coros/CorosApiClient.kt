@@ -81,151 +81,253 @@ class CorosApiClient(
     }
 
     /**
-     * Authenticates using an official COROS OAuth 2.0 / MCP Bearer token.
-     * Keeps user password 100% off-device. Automatically tests regional servers (Global, EU, CN).
+     * Authenticates using an official COROS OAuth 2.0 / MCP Bearer token against the selected region.
+     * Keeps user password 100% off-device. Never retries across unauthorized jurisdictions.
      */
     fun authenticateWithToken(token: String): Result<CorosProfile> {
         val cleanToken = token.trim()
         if (cleanToken.isBlank()) return Result.failure(IllegalArgumentException("Token is empty"))
         this.accessToken = cleanToken
 
-        val regionsToTry = linkedSetOf(
-            region,
-            "teamapi.coros.com",
-            "teameuapi.coros.com",
-            "teamcnapi.coros.com"
-        ).toList()
+        return try {
+            val url = "${getBaseUrl()}/activity/query?size=1&pageNumber=1"
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .header("accesstoken", cleanToken)
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
+                .build()
 
-        var lastException: Exception? = null
-
-        for (targetRegion in regionsToTry) {
-            try {
-                val targetBase = if (targetRegion.startsWith("http")) targetRegion.trimEnd('/') else "https://$targetRegion"
-                val url = "$targetBase/activity/query?size=1&pageNumber=1"
-                val request = Request.Builder()
-                    .url(url)
-                    .get()
-                    .header("accesstoken", cleanToken)
-                    .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
-                    .build()
-
-                client.newCall(request).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        lastException = IllegalStateException("Authentication failed with HTTP ${resp.code}")
-                        return@use
-                    }
-                    val body = resp.body?.string() ?: ""
-                    val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
-                    val code = root.optString("result", root.optString("code", ""))
-                    if (code == "0000") {
-                        this.region = targetRegion
-                        return Result.success(CorosProfile(nickname = "COROS Athlete"))
-                    } else if (code == "1019") {
-                        lastException = IllegalStateException(root.optString("message", "Invalid or expired token ($code)"))
-                    } else {
-                        val msg = root.optString("message", "Authentication error ($code)")
-                        lastException = IllegalStateException(msg)
-                    }
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    return Result.failure(IllegalStateException("Authentication failed with HTTP ${resp.code}"))
                 }
-            } catch (e: Exception) {
-                lastException = e
+                val body = resp.body?.string() ?: ""
+                val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+                val code = root.optString("result", root.optString("code", ""))
+                if (code == "0000") {
+                    Result.success(CorosProfile(nickname = "COROS Athlete"))
+                } else {
+                    val msg = root.optString("message", "Authentication error ($code)")
+                    Result.failure(IllegalStateException(msg))
+                }
             }
+        } catch (e: Exception) {
+            Result.failure(e)
         }
-
-        return Result.failure(lastException ?: IllegalStateException("COROS token authentication failed"))
     }
 
+    /**
+     * Authenticates directly with the user's selected regional COROS Training Hub server.
+     * Strictly targets the selected region — never sprays credentials across jurisdictions.
+     */
     fun login(email: String, rawPassword: String): Result<CorosProfile> {
-        val md5Pwd = md5(rawPassword)
-        val jsonBody = JSONObject().apply {
-            put("account", email.trim())
-            put("pwd", md5Pwd)
-            put("accountType", 2)
-        }
-        val mediaType = "application/json;charset=UTF-8".toMediaType()
+        return try {
+            val md5Pwd = md5(rawPassword)
+            val jsonBody = JSONObject().apply {
+                put("account", email.trim())
+                put("pwd", md5Pwd)
+                put("accountType", 2)
+            }
+            val mediaType = "application/json;charset=UTF-8".toMediaType()
 
-        val regionsToTry = linkedSetOf(
-            region,
-            "teamapi.coros.com",
-            "teameuapi.coros.com",
-            "teamcnapi.coros.com"
-        ).toList()
+            val url = "${getBaseUrl()}/account/login"
+            val request = Request.Builder()
+                .url(url)
+                .post(jsonBody.toString().toRequestBody(mediaType))
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
+                .header("Content-Type", "application/json;charset=UTF-8")
+                .build()
 
-        var lastException: Exception? = null
+            client.newCall(request).execute().use { resp ->
+                val body = resp.body?.string() ?: ""
+                val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+                val code = root.optString("result", root.optString("code", ""))
 
-        for (targetRegion in regionsToTry) {
-            try {
-                val targetBase = if (targetRegion.startsWith("http")) targetRegion.trimEnd('/') else "https://$targetRegion"
-                val url = "$targetBase/account/login"
-                val request = Request.Builder()
-                    .url(url)
-                    .post(jsonBody.toString().toRequestBody(mediaType))
-                    .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
-                    .header("Content-Type", "application/json;charset=UTF-8")
-                    .build()
+                if (code == "0000") {
+                    val data = root.optJSONObject("data") ?: JSONObject()
+                    val token = data.optString("accessToken")
+                    val uId = data.optString("userId")
+                    val regionId = data.optInt("regionId", 0)
 
-                client.newCall(request).execute().use { resp ->
-                    val body = resp.body?.string() ?: ""
-                    val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
-                    val code = root.optString("result", root.optString("code", ""))
+                    // Safely align active regional endpoint if COROS returns home cluster index
+                    val resolvedRegion = when (regionId) {
+                        2 -> "teameuapi.coros.com"
+                        3 -> "teamcnapi.coros.com"
+                        1 -> "teamapi.coros.com"
+                        else -> this.region
+                    }
+                    this.region = resolvedRegion
+                    this.accessToken = token
+                    this.userId = uId
 
-                    if (code == "0000") {
-                        val data = root.optJSONObject("data") ?: JSONObject()
-                        val token = data.optString("accessToken")
-                        val uId = data.optString("userId")
-                        val regionId = data.optInt("regionId", 0)
+                    val zoneData = data.optJSONObject("zoneData") ?: try {
+                        val zdStr = data.optString("zoneData")
+                        if (zdStr.isNotBlank()) JSONObject(zdStr) else JSONObject()
+                    } catch (_: Exception) { JSONObject() }
 
-                        val resolvedRegion = when (regionId) {
-                            2 -> "teameuapi.coros.com"
-                            3 -> "teamcnapi.coros.com"
-                            1 -> "teamapi.coros.com"
-                            else -> targetRegion
-                        }
-                        this.region = resolvedRegion
-                        this.accessToken = token
-                        this.userId = uId
-
-                        val zoneData = data.optJSONObject("zoneData") ?: try {
-                            val zdStr = data.optString("zoneData")
-                            if (zdStr.isNotBlank()) JSONObject(zdStr) else JSONObject()
-                        } catch (_: Exception) { JSONObject() }
-
-                        val ltspSec = if (data.has("ltsp") && data.optInt("ltsp") > 0) {
-                            data.optInt("ltsp")
-                        } else {
-                            zoneData.optInt("ltsp", 296)
-                        }
-
-                        val rhr = if (data.has("rhr") && data.optInt("rhr") > 0) data.optInt("rhr") else zoneData.optInt("rhr", 44)
-                        val maxHr = if (data.has("maxHr") && data.optInt("maxHr") > 0) data.optInt("maxHr") else zoneData.optInt("maxHr", 195)
-                        val lthr = if (data.has("lthr") && data.optInt("lthr") > 0) data.optInt("lthr") else zoneData.optInt("lthr", 172)
-                        val weight = if (data.has("weight") && data.optDouble("weight") > 0.0) data.optDouble("weight") else 75.0
-
-                        val profile = CorosProfile(
-                            userId = uId,
-                            nickname = data.optString("nickname", "Runner"),
-                            rhr = rhr,
-                            maxHr = maxHr,
-                            lthr = lthr,
-                            ltspSec = ltspSec,
-                            ltspPace = formatPace(ltspSec),
-                            weightKg = weight
-                        )
-                        return Result.success(profile)
-                    } else if (code == "1030") {
-                        val msg = root.optString("message", "Credentials do not match records ($code)")
-                        lastException = IllegalStateException(msg)
+                    val ltspSec = if (data.has("ltsp") && data.optInt("ltsp") > 0) {
+                        data.optInt("ltsp")
                     } else {
-                        val msg = root.optString("message", "Authentication failed ($code)")
-                        lastException = IllegalStateException(msg)
+                        zoneData.optInt("ltsp", 296)
+                    }
+
+                    val rhr = if (data.has("rhr") && data.optInt("rhr") > 0) data.optInt("rhr") else zoneData.optInt("rhr", 44)
+                    val maxHr = if (data.has("maxHr") && data.optInt("maxHr") > 0) data.optInt("maxHr") else zoneData.optInt("maxHr", 195)
+                    val lthr = if (data.has("lthr") && data.optInt("lthr") > 0) data.optInt("lthr") else zoneData.optInt("lthr", 172)
+                    val weight = if (data.has("weight") && data.optDouble("weight") > 0.0) data.optDouble("weight") else 75.0
+
+                    val profile = CorosProfile(
+                        userId = uId,
+                        nickname = data.optString("nickname", "Runner"),
+                        rhr = rhr,
+                        maxHr = maxHr,
+                        lthr = lthr,
+                        ltspSec = ltspSec,
+                        ltspPace = formatPace(ltspSec),
+                        weightKg = weight
+                    )
+                    Result.success(profile)
+                } else {
+                    val msg = root.optString("message", "Authentication failed ($code)")
+                    Result.failure(IllegalStateException(msg))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    data class CorosScheduleWorkout(
+        val id: String,
+        val name: String,
+        val dateStr: String, // YYYY-MM-DD
+        val dateInt: Int, // YYYYMMDD
+        val distanceKm: Double,
+        val durationSeconds: Int,
+        val isCompleted: Boolean,
+        val workoutType: String = "Workout",
+        val targetPace: String = "",
+        val targetHrZone: String = ""
+    )
+
+    data class CorosScheduleData(
+        val planName: String = "",
+        val startDayInt: Int = 0,
+        val endDayInt: Int = 0,
+        val workouts: List<CorosScheduleWorkout> = emptyList()
+    )
+
+    /**
+     * Fetches scheduled workouts directly from the athlete's COROS Training Hub Calendar.
+     * @param startDate YYYYMMDD string (e.g. "20261001")
+     * @param endDate YYYYMMDD string (e.g. "20261130")
+     */
+    fun fetchSchedule(startDate: String, endDate: String): Result<CorosScheduleData> {
+        val token = accessToken ?: return Result.failure(IllegalStateException("Not authenticated"))
+        return try {
+            val url = "${getBaseUrl()}/training/schedule/query?startDate=$startDate&endDate=$endDate&supportRestExercise=1"
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .header("accesstoken", token)
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
+                .build()
+
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    return Result.failure(IllegalStateException("Schedule query failed with HTTP ${resp.code}"))
+                }
+                val body = resp.body?.string() ?: ""
+                val root = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+                val code = root.optString("result", root.optString("code", ""))
+                if (code.isNotEmpty() && code != "0000") {
+                    val msg = root.optString("message", "Schedule query failed ($code)")
+                    return Result.failure(IllegalStateException(msg))
+                }
+
+                val data = root.optJSONObject("data") ?: JSONObject()
+                val planName = data.optString("name", "")
+                val startDay = data.optInt("startDay", 0)
+                val endDay = data.optInt("endDay", 0)
+
+                // Programs lookup for target distance / duration
+                val progMap = mutableMapOf<String, JSONObject>()
+                val programs = data.optJSONArray("programs")
+                if (programs != null) {
+                    for (i in 0 until programs.length()) {
+                        val p = programs.optJSONObject(i) ?: continue
+                        val pid = p.optString("idInPlan", p.optString("id", ""))
+                        if (pid.isNotBlank()) progMap[pid] = p
                     }
                 }
-            } catch (e: Exception) {
-                lastException = e
-            }
-        }
 
-        return Result.failure(lastException ?: IllegalStateException("COROS login failed"))
+                val workouts = mutableListOf<CorosScheduleWorkout>()
+                val entities = data.optJSONArray("entities")
+                if (entities != null) {
+                    for (i in 0 until entities.length()) {
+                        val e = entities.optJSONObject(i) ?: continue
+                        val hDay = e.optInt("happenDay", 0)
+                        if (hDay <= 0) continue
+
+                        val y = hDay / 10000
+                        val m = (hDay % 10000) / 100
+                        val d = hDay % 100
+                        val dateStr = "%04d-%02d-%02d".format(y, m, d)
+
+                        val status = e.optInt("executeStatus", 1) // 2 = completed, 1 = planned
+                        val isCompleted = status == 2
+                        val pId = e.optString("planProgramId", e.optString("idInPlan", ""))
+                        val prog = progMap[pId]
+
+                        val progName = prog?.optString("name", "COROS Workout") ?: "COROS Workout"
+                        val name = e.optString("name", progName)
+                        val targetVal = prog?.optDouble("targetValue", 0.0) ?: 0.0
+                        val distKm = if (targetVal > 1000.0) {
+                            ((targetVal / 100000.0) * 100.0).toInt() / 100.0
+                        } else {
+                            val sportData = e.optJSONObject("sportData")
+                            val sDist = sportData?.optDouble("distance", 0.0) ?: 0.0
+                            ((sDist / 1000.0) * 100.0).toInt() / 100.0
+                        }
+                        val durSec = prog?.optInt("duration", 0) ?: 0
+
+                        val type = when {
+                            name.contains("Long", ignoreCase = true) -> "Long Run"
+                            name.contains("Threshold", ignoreCase = true) || name.contains("Tempo", ignoreCase = true) -> "Threshold"
+                            name.contains("Interval", ignoreCase = true) || name.contains("Speed", ignoreCase = true) -> "Intervals"
+                            name.contains("Recovery", ignoreCase = true) || name.contains("Easy", ignoreCase = true) -> "Easy Run"
+                            name.contains("Rest", ignoreCase = true) -> "Rest"
+                            else -> "Workout"
+                        }
+
+                        workouts.add(
+                            CorosScheduleWorkout(
+                                id = e.optString("id", "$hDay-$i"),
+                                name = name,
+                                dateStr = dateStr,
+                                dateInt = hDay,
+                                distanceKm = distKm,
+                                durationSeconds = durSec,
+                                isCompleted = isCompleted,
+                                workoutType = type
+                            )
+                        )
+                    }
+                }
+
+                Result.success(
+                    CorosScheduleData(
+                        planName = planName,
+                        startDayInt = startDay,
+                        endDayInt = endDay,
+                        workouts = workouts.sortedBy { it.dateInt }
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     data class CorosActivityDetail(

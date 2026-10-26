@@ -279,23 +279,24 @@ object LapsRepository {
             val mondayStr = sdf.format(mondayDate)
             val sundayStr = sdf.format(sundayDate)
 
-            // 2. Query Calendar for Planned Workouts
-            // A plan is only valid and active if configured in the app for the selected calendar.
+            // 2. Query Calendar for Planned Workouts (COROS Training Hub Calendar & local Google Calendar)
             val calId = getSelectedCalendarId(context)
             val activePlan = getActivePlan(context)
-            val hasConfiguredPlan = activePlan != null && activePlan.calendarId == calId
+            val hasConfiguredGCalPlan = activePlan != null && activePlan.calendarId == calId && calId != -1L
 
-            // Is the plan active for the current week (Monday..Sunday)?
-            // If activePlan starts on upcoming Monday, this current week is pre-plan (metrics only).
-            val isPlanActiveThisWeek = hasConfiguredPlan &&
-                sundayMillis >= activePlan.startDateMillis &&
-                mondayMillis <= activePlan.raceDateMillis
+            // Fetch COROS Training Hub Calendar Schedule
+            val calStart = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -14) }
+            val calEnd = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 70) }
+            val startDayStr = SimpleDateFormat("yyyyMMdd", Locale.US).format(calStart.time)
+            val endDayStr = SimpleDateFormat("yyyyMMdd", Locale.US).format(calEnd.time)
 
-            val isMetricsOnly = !isPlanActiveThisWeek
+            val corosScheduleResult = coros.fetchSchedule(startDayStr, endDayStr)
+            val corosSchedule = corosScheduleResult.getOrNull()
+            val corosWorkouts = corosSchedule?.workouts ?: emptyList()
+            val corosWorkoutsByDate = corosWorkouts.associateBy { it.dateStr }
 
-            // Only query calendar events for the active plan that fall within its valid plan range.
-            // Any rogue or past events before activePlan.startDateMillis are strictly filtered out.
-            val plannedList = if (hasConfiguredPlan && calId != -1L) {
+            // Local Google Calendar planned workouts
+            val gcalPlannedList = if (hasConfiguredGCalPlan) {
                 CalendarSyncManager.getPlannedWorkouts(
                     context = context,
                     calendarId = calId,
@@ -303,8 +304,12 @@ object LapsRepository {
                     endMillis = Math.min(sundayMillis + 864000000L, activePlan.raceDateMillis + 86400000L)
                 ).filter { it.startMillis >= activePlan.startDateMillis }
             } else emptyList()
+            val gcalPlannedByDate = gcalPlannedList.associateBy { it.dateString }
 
-            val plannedByDate = plannedList.associateBy { it.dateString }
+            val hasCorosPlan = corosSchedule != null && (corosSchedule.planName.isNotBlank() || corosWorkouts.isNotEmpty())
+            val hasActivePlanThisWeek = hasConfiguredGCalPlan || hasCorosPlan
+            val isMetricsOnly = !hasActivePlanThisWeek
+
             val activitiesByDate = activities.groupBy { it.dateOnly }
 
             // 3. Build Weekly Mileage Matrix
@@ -320,8 +325,15 @@ object LapsRepository {
                 val dStr = sdf.format(iterCal.time)
                 val dayActs = activitiesByDate[dStr] ?: emptyList()
                 val dayActualKm = dayActs.sumOf { it.distanceKm }
-                val planned = plannedByDate[dStr]
-                val dayPlannedKm = if (isPlanActiveThisWeek) (planned?.targetDistanceKm ?: 0.0) else 0.0
+
+                // Planned distance from COROS calendar first, then Google Calendar
+                val corosWk = corosWorkoutsByDate[dStr]
+                val gcalWk = gcalPlannedByDate[dStr]
+                val dayPlannedKm = if (corosWk != null && corosWk.distanceKm > 0) {
+                    corosWk.distanceKm
+                } else if (hasConfiguredGCalPlan) {
+                    gcalWk?.targetDistanceKm ?: 0.0
+                } else 0.0
 
                 actualWkKm += dayActualKm
                 plannedWkKm += dayPlannedKm
@@ -330,10 +342,17 @@ object LapsRepository {
                 val isToday = dStr == todayStr
                 val status = when {
                     dayActualKm > 0 -> "COMPLETED"
-                    isToday && dayPlannedKm > 0 && isPlanActiveThisWeek -> "TODAY"
-                    isPlanActiveThisWeek && dStr > todayStr && dayPlannedKm > 0 -> "PLANNED"
-                    isPlanActiveThisWeek && dStr < todayStr && dayPlannedKm > 0 -> "MISSED"
+                    isToday && dayPlannedKm > 0 -> "TODAY"
+                    hasActivePlanThisWeek && dStr > todayStr && dayPlannedKm > 0 -> "PLANNED"
+                    hasActivePlanThisWeek && dStr < todayStr && dayPlannedKm > 0 -> "MISSED"
                     else -> "REST"
+                }
+
+                val workoutTitle = when {
+                    dayActs.isNotEmpty() -> dayActs.first().name
+                    corosWk != null -> corosWk.name
+                    hasConfiguredGCalPlan && gcalWk != null -> gcalWk.workoutType
+                    else -> "Rest"
                 }
 
                 daysMatrix.add(
@@ -346,47 +365,73 @@ object LapsRepository {
                         actualKm = ((dayActualKm * 100).toInt()) / 100.0,
                         plannedKm = ((dayPlannedKm * 100).toInt()) / 100.0,
                         status = status,
-                        workoutType = if (dayActs.isNotEmpty()) dayActs.first().name else (if (isPlanActiveThisWeek) (planned?.workoutType ?: "Rest") else "Rest")
+                        workoutType = workoutTitle
                     )
                 )
                 iterCal.add(Calendar.DAY_OF_YEAR, 1)
             }
 
             actualWkKm = ((actualWkKm * 100).toInt()) / 100.0
-            plannedWkKm = if (isPlanActiveThisWeek) ((plannedWkKm * 100).toInt()) / 100.0 else 0.0
+            plannedWkKm = if (hasActivePlanThisWeek) ((plannedWkKm * 100).toInt()) / 100.0 else 0.0
             val completionPct = if (plannedWkKm > 0) ((actualWkKm / plannedWkKm) * 100.0 + 0.5).toInt() else 0
 
-            // 4. Upcoming Workout (populated from active plan if configured; otherwise clean metrics-only state)
-            val upcoming = if (hasConfiguredPlan) {
-                plannedList.firstOrNull { it.dateString >= todayStr && !it.isCompleted && !it.isSkipped }
+            // 4. Upcoming Workout (from COROS calendar first, then Google Calendar)
+            val upcomingCoros = corosWorkouts.firstOrNull { it.dateStr >= todayStr && !it.isCompleted }
+            val upcomingGCal = if (hasConfiguredGCalPlan) {
+                gcalPlannedList.firstOrNull { it.dateString >= todayStr && !it.isCompleted && !it.isSkipped }
             } else null
 
-            val nwData = if (upcoming != null) {
+            val nwData = if (upcomingCoros != null) {
                 val nowTime = System.currentTimeMillis()
-                val daysUntil = ((upcoming.startMillis - nowTime) / 86400000L).toInt()
+                val targetMillis = try {
+                    sdf.parse(upcomingCoros.dateStr)?.time ?: nowTime
+                } catch (_: Exception) { nowTime }
+                val daysUntil = ((targetMillis - nowTime) / 86400000L).toInt()
                 val countdownLabel = when {
                     daysUntil <= 0 -> "Today"
                     daysUntil == 1 -> "Tomorrow"
                     else -> "In $daysUntil days"
                 }
-                val badgeFmt = SimpleDateFormat("EEE, MMM d", Locale.US).format(Date(upcoming.startMillis))
+                val badgeFmt = try {
+                    SimpleDateFormat("EEE, MMM d", Locale.US).format(Date(targetMillis))
+                } catch (_: Exception) { upcomingCoros.dateStr }
 
                 NextWorkoutData(
-                    title = upcoming.title,
-                    workoutType = upcoming.workoutType,
-                    date = upcoming.dateString,
+                    title = upcomingCoros.name,
+                    workoutType = upcomingCoros.workoutType,
+                    date = upcomingCoros.dateStr,
                     dayBadge = badgeFmt,
                     countdown = countdownLabel,
-                    targetDistanceKm = upcoming.targetDistanceKm,
-                    targetPace = upcoming.targetPace,
-                    targetHrZone = upcoming.targetHrZone
+                    targetDistanceKm = upcomingCoros.distanceKm,
+                    targetPace = if (upcomingCoros.targetPace.isNotBlank()) upcomingCoros.targetPace else profile.ltspPace,
+                    targetHrZone = if (upcomingCoros.targetHrZone.isNotBlank()) upcomingCoros.targetHrZone else "Zone 2"
+                )
+            } else if (upcomingGCal != null) {
+                val nowTime = System.currentTimeMillis()
+                val daysUntil = ((upcomingGCal.startMillis - nowTime) / 86400000L).toInt()
+                val countdownLabel = when {
+                    daysUntil <= 0 -> "Today"
+                    daysUntil == 1 -> "Tomorrow"
+                    else -> "In $daysUntil days"
+                }
+                val badgeFmt = SimpleDateFormat("EEE, MMM d", Locale.US).format(Date(upcomingGCal.startMillis))
+
+                NextWorkoutData(
+                    title = upcomingGCal.title,
+                    workoutType = upcomingGCal.workoutType,
+                    date = upcomingGCal.dateString,
+                    dayBadge = badgeFmt,
+                    countdown = countdownLabel,
+                    targetDistanceKm = upcomingGCal.targetDistanceKm,
+                    targetPace = upcomingGCal.targetPace,
+                    targetHrZone = upcomingGCal.targetHrZone
                 )
             } else {
                 NextWorkoutData(
                     title = "No Scheduled Workout",
                     workoutType = "Free Run",
                     date = todayStr,
-                    dayBadge = "Metrics Only",
+                    dayBadge = "Live Sync",
                     countdown = "All runs tracked via COROS",
                     targetDistanceKm = 0.0,
                     targetPace = "--",
@@ -394,9 +439,12 @@ object LapsRepository {
                 )
             }
 
-            // 5. Training Load & 80/20 Zone Spectrum
+            // 5. Training Load & 80/20 Zone Spectrum (7-day rolling window for Acute TL)
+            val nowSec = System.currentTimeMillis() / 1000L
+            val sevenDaysAgoSec = nowSec - (7 * 86400L)
+            val rolling7dRuns = activities.filter { it.timestamp >= sevenDaysAgoSec }
             val wkRuns = activities.filter { it.dateOnly in mondayStr..sundayStr }
-            val acuteTl = wkRuns.sumOf { it.trainingLoad }
+            val acuteTl = if (rolling7dRuns.isNotEmpty()) rolling7dRuns.sumOf { it.trainingLoad } else wkRuns.sumOf { it.trainingLoad }
             val totalWeekSec = wkRuns.sumOf { it.durationSeconds }
             val wkAvgPace = if (actualWkKm > 0 && totalWeekSec > 0) {
                 val secPerKm = (totalWeekSec / actualWkKm).toInt()
@@ -425,7 +473,24 @@ object LapsRepository {
             // 6. Post-Run Analysis for Recent Runs
             val recentList = mutableListOf<LastRunData>()
             for ((index, act) in activities.take(5).withIndex()) {
-                val p = plannedByDate[act.dateOnly]
+                val gcalWk = gcalPlannedByDate[act.dateOnly]
+                val corosWk = corosWorkoutsByDate[act.dateOnly]
+                val p = gcalWk ?: if (corosWk != null && corosWk.distanceKm > 0) {
+                    CalendarSyncManager.PlannedWorkout(
+                        eventId = -1L,
+                        title = corosWk.name,
+                        description = corosWk.name,
+                        startMillis = 0L,
+                        dateString = corosWk.dateStr,
+                        targetDistanceKm = corosWk.distanceKm,
+                        workoutType = corosWk.workoutType,
+                        targetPace = corosWk.targetPace,
+                        targetHrZone = corosWk.targetHrZone,
+                        isCompleted = corosWk.isCompleted,
+                        isSkipped = false
+                    )
+                } else null
+
                 val detail = if (index == 0) coros.fetchActivityDetail(act.activityId, act.sportType).getOrNull() else null
 
                 val maxHr = if (detail != null && detail.maxHr > 0) detail.maxHr else act.maxHr
@@ -486,8 +551,8 @@ object LapsRepository {
             }
 
             // 7. Detect Missed Workout (only if user has a structured training plan active this week)
-            val missedEvent = if (isPlanActiveThisWeek) {
-                plannedList.firstOrNull {
+            val missedEvent = if (hasActivePlanThisWeek) {
+                gcalPlannedList.firstOrNull {
                     it.dateString >= mondayStr && it.dateString < todayStr && !it.isCompleted && !it.isSkipped && (activitiesByDate[it.dateString]?.isEmpty() ?: true)
                 }
             } else null
@@ -525,11 +590,45 @@ object LapsRepository {
                 CalendarSyncManager.findRaceEvent(
                     context = context,
                     calendarId = calId,
-                    fromMillis = if (hasConfiguredPlan) activePlan.startDateMillis - 86400000L else System.currentTimeMillis() - 86400000L
+                    fromMillis = if (hasConfiguredGCalPlan) activePlan.startDateMillis - 86400000L else System.currentTimeMillis() - 86400000L
                 )
             } else null
 
-            val rcData = if (activePlan != null && activePlan.calendarId == calId) {
+            val rcData = if (corosSchedule != null && corosSchedule.endDayInt > 0) {
+                val endDay = corosSchedule.endDayInt
+                val endY = endDay / 10000
+                val endM = (endDay % 10000) / 100
+                val endD = endDay % 100
+                val raceTargetCal = Calendar.getInstance().apply {
+                    set(endY, endM - 1, endD, 0, 0, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val todayCal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val diffDays = ((raceTargetCal.timeInMillis - todayCal.timeInMillis) / 86400000L).toInt().coerceAtLeast(0)
+                val weeksLeft = (diffDays / 7) + (if (diffDays % 7 > 0) 1 else 0)
+
+                val planName = corosSchedule.planName.trim().ifBlank { "COROS TARGET RACE" }.uppercase()
+                val raceDateStr = "%04d-%02d-%02d".format(endY, endM, endD)
+
+                RaceCountdownData(
+                    raceName = planName,
+                    raceDate = raceDateStr,
+                    daysLeft = diffDays,
+                    currentWeek = if (weeksLeft > 0) weeksLeft else 0,
+                    totalWeeks = if (weeksLeft > 0) weeksLeft else 0,
+                    phase = if (diffDays in 1..42) "$weeksLeft WEEKS TO RACE · PEAK PREP" else "COROS TRAINING PLAN",
+                    goalTime = "Race Ready",
+                    goalPace = profile.ltspPace.ifBlank { "4:56 /km" },
+                    currentLtsp = profile.ltspPace.ifBlank { "4:56 /km" },
+                    currentLthr = profile.lthr,
+                    readinessTag = if (diffDays <= 14) "PEAK TAPER" else "ON TRACK"
+                )
+            } else if (hasConfiguredGCalPlan) {
                 val nowCal = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
@@ -677,7 +776,7 @@ object LapsRepository {
                     plannedKm = plannedWkKm,
                     completionPct = completionPct,
                     runsCompleted = runsDone,
-                    runsPlanned = if (isPlanActiveThisWeek) daysMatrix.count { it.plannedKm > 0 } else runsDone,
+                    runsPlanned = if (hasActivePlanThisWeek) daysMatrix.count { it.plannedKm > 0 } else runsDone,
                     avgPace = wkAvgPace,
                     totalElevationM = totalElev,
                     days = daysMatrix
@@ -701,7 +800,7 @@ object LapsRepository {
                 zoneSpectrum = ZoneSpectrumData(aerobicPct = aeroPct, thresholdPct = 100 - aeroPct),
                 lastRun = lastRunData,
                 missedWorkout = missedWorkoutData,
-                activePlan = if (hasConfiguredPlan) activePlan else null,
+                activePlan = if (hasConfiguredGCalPlan) activePlan else (if (corosSchedule != null && corosSchedule.planName.isNotBlank()) ActivePlanInfo(distanceLabel = corosSchedule.planName, planWeeks = 10, startDateMillis = mondayMillis, raceDateMillis = mondayMillis + 35 * 86400000L, calendarId = -1L, customRaceName = corosSchedule.planName) else null),
                 recentRuns = recentList,
                 isMetricsOnly = isMetricsOnly
             )

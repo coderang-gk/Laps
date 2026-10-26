@@ -2160,6 +2160,7 @@ private fun LapsOnboardingDialog(
 ) {
     val context = LocalContext.current
     var isOAuthMode by remember { mutableStateOf(false) }
+    var selectedRegion by remember { mutableStateOf(LapsRepository.getCorosRegion(context)) }
     var token by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -2283,6 +2284,39 @@ private fun LapsOnboardingDialog(
                         )
                     ) {
                         Text("MCP Token", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Region Selector
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "COROS Server Region",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        "teamapi.coros.com" to "Global / US",
+                        "teameuapi.coros.com" to "Europe",
+                        "teamcnapi.coros.com" to "China"
+                    ).forEach { (reg, label) ->
+                        FilterChip(
+                            selected = selectedRegion == reg,
+                            onClick = { selectedRegion = reg },
+                            label = {
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
 
@@ -2536,12 +2570,13 @@ private fun LapsOnboardingDialog(
                         isLoggingIn = true
                         errorMessage = null
                         coroutineScope.launch(Dispatchers.IO) {
-                            val client = io.github.coderang.laps.coros.CorosApiClient()
+                            val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
                             val authRes = client.authenticateWithToken(token.trim())
                             withContext(Dispatchers.Main) {
                                 isLoggingIn = false
                                 authRes.onSuccess {
-                                    LapsRepository.saveCorosToken(context, token.trim(), region = client.region)
+                                    LapsRepository.saveCorosToken(context, token.trim(), region = selectedRegion)
+                                    LapsRepository.saveCorosRegion(context, selectedRegion)
                                     LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                                     LapsRepository.setSetupCompleted(context, true)
                                     Toast.makeText(context, "Connected via COROS OAuth!", Toast.LENGTH_SHORT).show()
@@ -2559,12 +2594,13 @@ private fun LapsOnboardingDialog(
                         isLoggingIn = true
                         errorMessage = null
                         coroutineScope.launch(Dispatchers.IO) {
-                            val client = io.github.coderang.laps.coros.CorosApiClient()
+                            val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
                             val loginRes = client.login(email.trim(), password.trim())
                             withContext(Dispatchers.Main) {
                                 isLoggingIn = false
                                 loginRes.onSuccess {
-                                    LapsRepository.saveCorosCredentials(context, email.trim(), password.trim(), region = client.region)
+                                    LapsRepository.saveCorosCredentials(context, email.trim(), password.trim(), region = selectedRegion)
+                                    LapsRepository.saveCorosRegion(context, selectedRegion)
                                     LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                                     LapsRepository.setSetupCompleted(context, true)
                                     Toast.makeText(context, "Connected to COROS Training Hub!", Toast.LENGTH_SHORT).show()
@@ -2613,11 +2649,13 @@ private fun LapsSettingsScreen(
     val context = LocalContext.current
     val (savedEmail, savedPassword) = remember { LapsRepository.getCorosCredentials(context) }
     val savedToken = remember { LapsRepository.getCorosToken(context) }
+    val savedRegion = remember { LapsRepository.getCorosRegion(context) }
     val savedCalId = remember { LapsRepository.getSelectedCalendarId(context) }
     val savedGemini = remember { LapsRepository.getGeminiKey(context) }
     val activePlan = remember { LapsRepository.getActivePlan(context) }
 
     var token by remember { mutableStateOf(savedToken) }
+    var selectedRegion by remember { mutableStateOf(savedRegion) }
     var email by remember { mutableStateOf(savedEmail) }
     var password by remember { mutableStateOf(savedPassword) }
     var showPassword by remember { mutableStateOf(false) }
@@ -2652,12 +2690,13 @@ private fun LapsSettingsScreen(
                             if (isOAuthMode && token.isNotBlank()) {
                                 isSaving = true
                                 coroutineScope.launch(Dispatchers.IO) {
-                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = LapsRepository.getCorosRegion(context))
+                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
                                     val authRes = client.authenticateWithToken(token.trim())
                                     withContext(Dispatchers.Main) {
                                         isSaving = false
                                         authRes.onSuccess {
-                                            LapsRepository.saveCorosToken(context, token.trim(), region = client.region)
+                                            LapsRepository.saveCorosToken(context, token.trim(), region = selectedRegion)
+                                            LapsRepository.saveCorosRegion(context, selectedRegion)
                                             LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                                             LapsRepository.saveGeminiKey(context, geminiKey)
                                             LapsRepository.setSetupCompleted(context, true)
@@ -2670,12 +2709,13 @@ private fun LapsSettingsScreen(
                             } else if (!isOAuthMode && email.isNotBlank() && password.isNotBlank()) {
                                 isSaving = true
                                 coroutineScope.launch(Dispatchers.IO) {
-                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = LapsRepository.getCorosRegion(context))
+                                    val client = io.github.coderang.laps.coros.CorosApiClient(region = selectedRegion)
                                     val loginRes = client.login(email.trim(), password.trim())
                                     withContext(Dispatchers.Main) {
                                         isSaving = false
                                         loginRes.onSuccess {
-                                            LapsRepository.saveCorosCredentials(context, email.trim(), password.trim(), region = client.region)
+                                            LapsRepository.saveCorosCredentials(context, email.trim(), password.trim(), region = selectedRegion)
+                                            LapsRepository.saveCorosRegion(context, selectedRegion)
                                             LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                                             LapsRepository.saveGeminiKey(context, geminiKey)
                                             LapsRepository.setSetupCompleted(context, true)
@@ -2687,10 +2727,11 @@ private fun LapsSettingsScreen(
                                 }
                             } else {
                                 if (isOAuthMode) {
-                                    LapsRepository.saveCorosToken(context, token)
+                                    LapsRepository.saveCorosToken(context, token, region = selectedRegion)
                                 } else {
-                                    LapsRepository.saveCorosCredentials(context, email, password)
+                                    LapsRepository.saveCorosCredentials(context, email, password, region = selectedRegion)
                                 }
+                                LapsRepository.saveCorosRegion(context, selectedRegion)
                                 LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                                 LapsRepository.saveGeminiKey(context, geminiKey)
                                 LapsRepository.setSetupCompleted(context, true)
@@ -2813,6 +2854,39 @@ private fun LapsSettingsScreen(
                             )
                         ) {
                             Text("MCP Token", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Region Selector
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "COROS Server Region",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "teamapi.coros.com" to "Global / US",
+                            "teameuapi.coros.com" to "Europe",
+                            "teamcnapi.coros.com" to "China"
+                        ).forEach { (reg, label) ->
+                            FilterChip(
+                                selected = selectedRegion == reg,
+                                onClick = { selectedRegion = reg },
+                                label = {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (selectedRegion == reg) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
 
