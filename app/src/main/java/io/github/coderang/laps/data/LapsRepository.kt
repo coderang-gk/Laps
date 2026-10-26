@@ -1,8 +1,6 @@
 package io.github.coderang.laps.data
 
-import android.content.ComponentName
 import android.content.Context
-import android.content.pm.PackageManager
 import io.github.coderang.laps.calendar.CalendarSyncManager
 import io.github.coderang.laps.coach.EvoLabAnalyzer
 import io.github.coderang.laps.coach.GeminiCoachClient
@@ -210,50 +208,6 @@ object LapsRepository {
             .edit()
             .putString("app_theme_mode", theme)
             .apply()
-    }
-
-    fun getAppIconStyle(context: Context): String {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString("app_launcher_icon", "LIGHT") ?: "LIGHT"
-    }
-
-    fun setAppIconStyle(context: Context, style: String) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString("app_launcher_icon", style)
-            .apply()
-
-        val pm = context.packageManager
-        val lightAlias = ComponentName(context, "io.github.coderang.laps.MainActivityLight")
-        val darkAlias = ComponentName(context, "io.github.coderang.laps.MainActivityDark")
-
-        try {
-            if (style == "DARK") {
-                pm.setComponentEnabledSetting(
-                    lightAlias,
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP
-                )
-                pm.setComponentEnabledSetting(
-                    darkAlias,
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    PackageManager.DONT_KILL_APP
-                )
-            } else {
-                pm.setComponentEnabledSetting(
-                    darkAlias,
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP
-                )
-                pm.setComponentEnabledSetting(
-                    lightAlias,
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    PackageManager.DONT_KILL_APP
-                )
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("LapsIcon", "Failed to update launcher icon alias: ${e.message}", e)
-        }
     }
 
     fun getStyleForTile(context: Context, tileType: ExpressiveTileType): Int {
