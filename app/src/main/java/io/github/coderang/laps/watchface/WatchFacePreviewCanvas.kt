@@ -314,24 +314,23 @@ private fun DrawScope.drawPixelBubblyWatchFace(
         char: String,
         fillColor: Color,
         xOff: Float,
-        yOff: Float,
-        angleDeg: Float
+        yOff: Float
     ) {
-        val textSizePx = radius * 0.74f
+        val textSizePx = radius * 0.84f
         val canvas = drawContext.canvas.nativeCanvas
         canvas.save()
         canvas.translate(center.x + xOff, center.y + yOff)
-        canvas.rotate(angleDeg)
 
-        // 1. Dark outline cut-out (creates the overlapping jigsaw separation)
+        // 1. Thick dark outline cutout (prominent black separation border)
         val strokePaint = android.graphics.Paint().apply {
             isAntiAlias = true
             typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
             this.textSize = textSizePx
             this.textAlign = android.graphics.Paint.Align.CENTER
             this.style = android.graphics.Paint.Style.STROKE
-            this.strokeWidth = radius * 0.034f
+            this.strokeWidth = radius * 0.062f
             this.strokeJoin = android.graphics.Paint.Join.ROUND
+            this.strokeCap = android.graphics.Paint.Cap.ROUND
             this.color = config.palette.backgroundColor.toArgb()
         }
 
@@ -347,28 +346,28 @@ private fun DrawScope.drawPixelBubblyWatchFace(
 
         val yBaseline = -((fillPaint.descent() + fillPaint.ascent()) / 2f)
 
-        // Draw outline cutout first, then vibrant fill
+        // Draw outline cutout first, then fill
         canvas.drawText(char, 0f, yBaseline, strokePaint)
         canvas.drawText(char, 0f, yBaseline, fillPaint)
 
         canvas.restore()
     }
 
-    // Balanced interlocking offset spacing with comfortable breathing room
-    val xSpread = radius * 0.235f
-    val ySpread = radius * 0.235f
+    // Horizontal spacing pulled closer, vertical 90° upright (0° tilt)
+    val xSpread = radius * 0.175f
+    val ySpread = radius * 0.20f
 
-    // Layer 1: Top-Left (d0, Pink) tilted -6°
-    drawInterlockingDigit(d0, c1, -xSpread, -ySpread, -6f)
+    // Layer 1: Top-Left (d0, e.g. 1) - base layer
+    drawInterlockingDigit(d0, c1, -xSpread, -ySpread)
 
-    // Layer 2: Top-Right (d1, Blue) tilted +8°
-    drawInterlockingDigit(d1, c2, xSpread, -ySpread, 8f)
+    // Layer 2: Top-Right (d1, e.g. 0) - right digit overlaps on the left
+    drawInterlockingDigit(d1, c2, xSpread, -ySpread)
 
-    // Layer 3: Bottom-Left (d2, White) tilted +5°
-    drawInterlockingDigit(d2, c3, -xSpread, ySpread, 5f)
+    // Layer 3: Bottom-Left (d2, e.g. 2) - bottom digit overlaps the top
+    drawInterlockingDigit(d2, c3, -xSpread, ySpread)
 
-    // Layer 4: Bottom-Right (d3, Purple) tilted -6°
-    drawInterlockingDigit(d3, c4, xSpread, ySpread, -6f)
+    // Layer 4: Bottom-Right (d3, e.g. 9) - bottom & right overlaps top and left
+    drawInterlockingDigit(d3, c4, xSpread, ySpread)
 }
 
 /**
