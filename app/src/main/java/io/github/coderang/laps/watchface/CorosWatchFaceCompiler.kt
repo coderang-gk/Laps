@@ -89,7 +89,8 @@ object CorosWatchFaceCompiler {
                 digit = digit.toString(),
                 font = font,
                 textColor = config.palette.primaryColor.toArgb(),
-                fontSizePx = (resolution * 0.38f)
+                fontSizePx = (resolution * 0.38f),
+                hasOutline = (config.style == WatchFaceStyle.PIXEL_BUBBLY)
             )
             savePng(digitBitmap, File(timeNumDir, "$digit.png"))
             assetCount++
@@ -244,7 +245,8 @@ object CorosWatchFaceCompiler {
         digit: String,
         font: Typeface?,
         textColor: Int,
-        fontSizePx: Float
+        fontSizePx: Float,
+        hasOutline: Boolean = false
     ): Bitmap {
         val paint = Paint().apply {
             isAntiAlias = true
@@ -256,13 +258,30 @@ object CorosWatchFaceCompiler {
         val bounds = Rect()
         paint.getTextBounds(digit, 0, digit.length, bounds)
 
-        val width = (bounds.width() + 16).coerceAtLeast(24)
-        val height = (bounds.height() + 16).coerceAtLeast(24)
+        val padding = if (hasOutline) (fontSizePx * 0.16f).toInt() else 16
+        val width = (bounds.width() + padding).coerceAtLeast(24)
+        val height = (bounds.height() + padding).coerceAtLeast(24)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
         val x = width / 2f
         val y = (height / 2f) - ((paint.descent() + paint.ascent()) / 2f)
+
+        if (hasOutline) {
+            val strokePaint = Paint().apply {
+                isAntiAlias = true
+                color = android.graphics.Color.BLACK
+                textSize = fontSizePx
+                typeface = font ?: Typeface.DEFAULT_BOLD
+                textAlign = Paint.Align.CENTER
+                style = Paint.Style.STROKE
+                strokeWidth = fontSizePx * 0.10f
+                strokeJoin = Paint.Join.ROUND
+                strokeCap = Paint.Cap.ROUND
+            }
+            canvas.drawText(digit, x, y, strokePaint)
+        }
+
         canvas.drawText(digit, x, y, paint)
         return bitmap
     }

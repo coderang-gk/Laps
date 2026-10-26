@@ -258,17 +258,40 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     bubblyFont: Typeface?,
     monoFont: Typeface?
 ) {
-    val c1 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.primaryColor else Color(0xFFFF9BB2) // Soft Pink
-    val c2 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.secondaryColor else Color(0xFF6BB5F9) // Sky Blue
-    val c3 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.accentColor else Color(0xFFF7F7F7) // Off-white
-    val c4 = if (config.palette == WatchFacePalette.OBSIDIAN) config.palette.primaryColor else Color(0xFFCE88D8) // Lavender Purple
+    // Material You dual-tone diagonal pairing matching Google Pixel Watch Bold Digital
+    val (c1, c2, c3, c4) = when (config.palette) {
+        WatchFacePalette.OBSIDIAN -> listOf(
+            config.palette.primaryColor,
+            config.palette.secondaryColor,
+            config.palette.secondaryColor,
+            config.palette.primaryColor
+        )
+        WatchFacePalette.PIXEL_MINT -> listOf(
+            Color(0xFF8DE7D6), // Mint (Top-Left)
+            Color(0xFFA8B4FD), // Lavender (Top-Right)
+            Color(0xFFA8B4FD), // Lavender (Bottom-Left)
+            Color(0xFF8DE7D6)  // Mint (Bottom-Right)
+        )
+        WatchFacePalette.DYNAMIC_M3 -> listOf(
+            Color(0xFF8DE7D6), // Mint
+            Color(0xFFA8B4FD), // Lavender
+            Color(0xFFA8B4FD), // Lavender
+            Color(0xFF8DE7D6)  // Mint
+        )
+        else -> listOf(
+            config.palette.primaryColor,
+            config.palette.secondaryColor,
+            config.palette.secondaryColor,
+            config.palette.primaryColor
+        )
+    }
 
     // Outer Edge Complications (Pushed to perimeter like Pixel Watch Radial)
     val compPaint = android.graphics.Paint().apply {
         isAntiAlias = true
         typeface = monoFont ?: Typeface.MONOSPACE
-        color = config.palette.secondaryColor.toArgb()
-        textSize = radius * 0.088f
+        color = config.palette.secondaryColor.copy(alpha = 0.85f).toArgb()
+        textSize = radius * 0.078f
         textAlign = android.graphics.Paint.Align.CENTER
     }
 
@@ -276,14 +299,14 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     drawContext.canvas.nativeCanvas.drawText(
         dateStr,
         center.x,
-        center.y - (radius * 0.82f),
+        center.y - (radius * 0.86f),
         compPaint
     )
 
     // Left: Battery / Acute Load
     drawContext.canvas.nativeCanvas.drawText(
         "$acuteLoad AC",
-        center.x - (radius * 0.78f),
+        center.x - (radius * 0.84f),
         center.y + (radius * 0.02f),
         compPaint
     )
@@ -291,7 +314,7 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     // Right: Threshold Pace
     drawContext.canvas.nativeCanvas.drawText(
         thresholdPace,
-        center.x + (radius * 0.78f),
+        center.x + (radius * 0.84f),
         center.y + (radius * 0.02f),
         compPaint
     )
@@ -300,11 +323,11 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     drawContext.canvas.nativeCanvas.drawText(
         "${daysToRace}d RACE",
         center.x,
-        center.y + (radius * 0.84f),
+        center.y + (radius * 0.87f),
         compPaint
     )
 
-    // Center 4 Interlocking Tilted Digits
+    // Center 4 Interlocking Digits (Upright 90°, prominent black cutout border)
     val d0 = if (hoursStr.length >= 2) hoursStr.substring(0, 1) else "0"
     val d1 = if (hoursStr.length >= 2) hoursStr.substring(1, 2) else hoursStr
     val d2 = if (minutesStr.length >= 2) minutesStr.substring(0, 1) else "0"
@@ -316,25 +339,25 @@ private fun DrawScope.drawPixelBubblyWatchFace(
         xOff: Float,
         yOff: Float
     ) {
-        val textSizePx = radius * 0.84f
+        val textSizePx = radius * 0.88f
         val canvas = drawContext.canvas.nativeCanvas
         canvas.save()
         canvas.translate(center.x + xOff, center.y + yOff)
 
-        // 1. Thick dark outline cutout (prominent black separation border)
+        // 1. Thick pure black outline cutout (prominent separation border matching Pixel Watch reference)
         val strokePaint = android.graphics.Paint().apply {
             isAntiAlias = true
             typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
             this.textSize = textSizePx
             this.textAlign = android.graphics.Paint.Align.CENTER
             this.style = android.graphics.Paint.Style.STROKE
-            this.strokeWidth = radius * 0.062f
+            this.strokeWidth = radius * 0.082f
             this.strokeJoin = android.graphics.Paint.Join.ROUND
             this.strokeCap = android.graphics.Paint.Cap.ROUND
-            this.color = config.palette.backgroundColor.toArgb()
+            this.color = android.graphics.Color.BLACK
         }
 
-        // 2. Solid color fill
+        // 2. Vibrant solid color fill
         val fillPaint = android.graphics.Paint().apply {
             isAntiAlias = true
             typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
@@ -346,27 +369,27 @@ private fun DrawScope.drawPixelBubblyWatchFace(
 
         val yBaseline = -((fillPaint.descent() + fillPaint.ascent()) / 2f)
 
-        // Draw outline cutout first, then fill
+        // Draw outline cutout first, then solid color fill
         canvas.drawText(char, 0f, yBaseline, strokePaint)
         canvas.drawText(char, 0f, yBaseline, fillPaint)
 
         canvas.restore()
     }
 
-    // Horizontal spacing pulled closer, vertical 90° upright (0° tilt)
-    val xSpread = radius * 0.175f
-    val ySpread = radius * 0.20f
+    // Exact horizontal and vertical spread calibrated to Pixel Watch Bold Digital
+    val xSpread = radius * 0.235f
+    val ySpread = radius * 0.275f
 
-    // Layer 1: Top-Left (d0, e.g. 1) - base layer
+    // Layer 1: Top-Left (d0) - base layer
     drawInterlockingDigit(d0, c1, -xSpread, -ySpread)
 
-    // Layer 2: Top-Right (d1, e.g. 0) - right digit overlaps on the left
+    // Layer 2: Top-Right (d1) - right digit overlaps on the left
     drawInterlockingDigit(d1, c2, xSpread, -ySpread)
 
-    // Layer 3: Bottom-Left (d2, e.g. 2) - bottom digit overlaps the top
+    // Layer 3: Bottom-Left (d2) - bottom digit overlaps the top
     drawInterlockingDigit(d2, c3, -xSpread, ySpread)
 
-    // Layer 4: Bottom-Right (d3, e.g. 9) - bottom & right overlaps top and left
+    // Layer 4: Bottom-Right (d3) - bottom & right overlaps top and left
     drawInterlockingDigit(d3, c4, xSpread, ySpread)
 }
 
