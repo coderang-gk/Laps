@@ -22,8 +22,9 @@ We are pleased to release **Laps v1.0.2**, introducing native OAuth 2.0 authenti
   * Dedicated, crisp light mode color palette across all 12 widget styles.
   * Pure white surfaces, deep slate typography, and vibrant accents ensure high readability outdoors under direct sunlight.
 
-* **Material 3 Expressive Plan Hub FAB**:
-  * "Edit Plan / Build Plan" is now an extended Floating Action Button (FAB) anchored above the scrollable content in the Plan Race Hub for quick, ergonomic access.
+* **Material 3 Expressive Extended FABs**:
+  * **Plan Race Hub**: "Edit Plan / Build Plan" is now an extended Floating Action Button (FAB) anchored above the scrollable content for ergonomic access.
+  * **Settings**: "Save & Sync" is migrated into an extended FAB resting directly in the thumb zone with an inline saving spinner and generous bottom clearance.
 
 * **Upcoming Workout & Calendar Enhancements**:
   * Improved on-device calendar sync and workout parsing for structured interval distances.
@@ -35,7 +36,7 @@ We are pleased to release **Laps v1.0.2**, introducing native OAuth 2.0 authenti
 
 | Asset | File | SHA-256 Checksum |
 | :--- | :--- | :--- |
-| **Release APK** | `Laps-v1.0.2.apk` | `e1b405da449281f0b982b711df1face07234d8674b70d397cb7e90c10c825c6b` |
+| **Release APK** | `Laps-v1.0.2.apk` | `619a60b0519ba4cbd423c9c566d899d74491c4c6ed1e0ac63f37ec377909e042` |
 
 To verify file integrity:
 ```bash
