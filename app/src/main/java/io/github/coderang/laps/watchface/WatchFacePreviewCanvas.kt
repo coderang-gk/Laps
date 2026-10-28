@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,6 +60,8 @@ fun WatchFacePreviewCanvas(
     modifier: Modifier = Modifier,
     sizeDp: Dp = 280.dp,
     previewDate: Date = remember { Date() },
+    cycleIndex: Int = 0,
+    onCycleComplication: (() -> Unit)? = null,
     acuteLoad: Int = 311,
     thresholdPace: String = "4:56",
     weeklyMileage: Float = 24.5f,
@@ -66,59 +69,26 @@ fun WatchFacePreviewCanvas(
     daysToRace: Int = 47
 ) {
     val context = LocalContext.current
-    val stackedFont = remember {
-        try {
-            ResourcesCompat.getFont(context, R.font.google_sans_flex_stacked)
-        } catch (_: Exception) {
-            Typeface.DEFAULT_BOLD
-        }
-    }
-    val clockFont = remember {
-        try {
-            ResourcesCompat.getFont(context, R.font.google_sans_clock_600)
-        } catch (_: Exception) {
-            Typeface.DEFAULT_BOLD
-        }
-    }
-    val bubblyFont = remember {
-        try {
-            ResourcesCompat.getFont(context, R.font.google_sans_flex_bubbly)
-        } catch (_: Exception) {
-            Typeface.DEFAULT_BOLD
-        }
-    }
-    val bubblyAodFont = remember {
-        try {
-            ResourcesCompat.getFont(context, R.font.google_sans_flex_aod)
-        } catch (_: Exception) {
-            null
-        }
-    }
-    val monoFont = remember {
-        try {
-            ResourcesCompat.getFont(context, R.font.google_sans_mono)
-        } catch (_: Exception) {
-            Typeface.MONOSPACE
-        }
-    }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "secondHand")
-    val animatedSecondAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 60000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "secondAngle"
-    )
-
-    // Formatted time strings
-    val hourFormat = if (config.is24HourFormat) "HH" else "hh"
-    val hoursStr = SimpleDateFormat(hourFormat, Locale.getDefault()).format(previewDate)
-    val minutesStr = SimpleDateFormat("mm", Locale.getDefault()).format(previewDate)
-    val secondsVal = SimpleDateFormat("ss", Locale.getDefault()).format(previewDate).toIntOrNull() ?: 30
-    val dateStr = SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(previewDate).uppercase()
+    // Render the exact 416x416 hardware frame using the identical sprite bitmaps and
+    // header rects that CorosWatchFaceCompiler.compileToBin() packs into the .bin binary.
+    val hardwareBitmap = remember(
+        config.style,
+        config.palette,
+        config.font,
+        config.complicationLayout,
+        config.isAodMode,
+        config.is24HourFormat,
+        previewDate.time / 60000L,
+        cycleIndex
+    ) {
+        CorosWatchFaceCompiler.renderHardwarePreviewBitmap(
+            context = context,
+            config = config,
+            previewDate = previewDate,
+            cycleIndex = cycleIndex
+        )
+    }
 
     // Outer physical watch case & bezel
     Box(
@@ -126,6 +96,13 @@ fun WatchFacePreviewCanvas(
             .size(sizeDp)
             .shadow(16.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.6f))
             .clip(CircleShape)
+            .then(
+                if (onCycleComplication != null && config.complicationLayout == ComplicationLayout.BACK_BUTTON_CYCLE && !config.isAodMode) {
+                    Modifier.clickable { onCycleComplication() }
+                } else {
+                    Modifier
+                }
+            )
             .background(
                 brush = Brush.radialGradient(
                     colors = listOf(
@@ -150,7 +127,7 @@ fun WatchFacePreviewCanvas(
             ),
         contentAlignment = Alignment.Center
     ) {
-        // Inner Display Bezel & Active Pixel Watch Canvas
+        // Inner Display Bezel & Active 416x416 Hardware-Accurate Canvas
         Box(
             modifier = Modifier
                 .fillMaxSize(config.model.bezelRatio)
@@ -158,93 +135,17 @@ fun WatchFacePreviewCanvas(
                 .background(if (config.isAodMode) Color.Black else config.palette.backgroundColor)
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val center = Offset(size.width / 2f, size.height / 2f)
-                val radius = size.width / 2f
-
-                when (config.style) {
-                    WatchFaceStyle.PIXEL_BUBBLY -> {
-                        drawPixelBubblyWatchFace(
-                            center = center,
-                            radius = radius,
-                            config = config,
-                            hoursStr = hoursStr,
-                            minutesStr = minutesStr,
-                            dateStr = dateStr,
-                            acuteLoad = acuteLoad,
-                            thresholdPace = thresholdPace,
-                            daysToRace = daysToRace,
-                            bubblyFont = bubblyFont,
-                            bubblyAodFont = bubblyAodFont,
-                            monoFont = monoFont
-                        )
-                    }
-
-                    WatchFaceStyle.CONCENTRIC -> {
-                        drawConcentricWatchFace(
-                            center = center,
-                            radius = radius,
-                            config = config,
-                            hoursStr = hoursStr,
-                            minutesStr = minutesStr,
-                            secondsVal = secondsVal,
-                            dateStr = dateStr,
-                            acuteLoad = acuteLoad,
-                            thresholdPace = thresholdPace,
-                            weeklyMileage = weeklyMileage,
-                            weeklyTarget = weeklyTarget,
-                            clockFont = clockFont,
-                            monoFont = monoFont
-                        )
-                    }
-
-                    WatchFaceStyle.STACKED_BOLD -> {
-                        drawStackedBoldWatchFace(
-                            center = center,
-                            radius = radius,
-                            config = config,
-                            hoursStr = hoursStr,
-                            minutesStr = minutesStr,
-                            dateStr = dateStr,
-                            acuteLoad = acuteLoad,
-                            thresholdPace = thresholdPace,
-                            daysToRace = daysToRace,
-                            stackedFont = stackedFont,
-                            monoFont = monoFont
-                        )
-                    }
-
-                    WatchFaceStyle.LAPS_TRACK -> {
-                        drawLapsTrackWatchFace(
-                            center = center,
-                            radius = radius,
-                            config = config,
-                            hoursStr = hoursStr,
-                            minutesStr = minutesStr,
-                            dateStr = dateStr,
-                            acuteLoad = acuteLoad,
-                            thresholdPace = thresholdPace,
-                            weeklyMileage = weeklyMileage,
-                            weeklyTarget = weeklyTarget,
-                            clockFont = clockFont,
-                            monoFont = monoFont
-                        )
-                    }
-
-                    WatchFaceStyle.EXPEDITION -> {
-                        drawExpeditionWatchFace(
-                            center = center,
-                            radius = radius,
-                            config = config,
-                            previewDate = previewDate,
-                            secondAngle = animatedSecondAngle,
-                            acuteLoad = acuteLoad,
-                            thresholdPace = thresholdPace,
-                            daysToRace = daysToRace,
-                            clockFont = clockFont,
-                            monoFont = monoFont
-                        )
-                    }
+                val dstRect = android.graphics.RectF(0f, 0f, size.width, size.height)
+                val bitmapPaint = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    isFilterBitmap = true
                 }
+                drawContext.canvas.nativeCanvas.drawBitmap(
+                    hardwareBitmap,
+                    null,
+                    dstRect,
+                    bitmapPaint
+                )
             }
         }
     }
@@ -264,7 +165,6 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     thresholdPace: String,
     daysToRace: Int,
     bubblyFont: Typeface?,
-    bubblyAodFont: Typeface? = null,
     monoFont: Typeface?
 ) {
     val isAod = config.isAodMode
@@ -300,49 +200,67 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     // Outer Edge Complications
     val compPaint = android.graphics.Paint().apply {
         isAntiAlias = true
-        typeface = monoFont ?: Typeface.MONOSPACE
+        typeface = Typeface.create("sans-serif", Typeface.BOLD)
         color = if (isAod) {
             Color.White.copy(alpha = 0.45f).toArgb()
         } else {
-            config.palette.secondaryColor.copy(alpha = 0.85f).toArgb()
+            c1.toArgb()
         }
-        textSize = radius * 0.078f
+        textSize = radius * 0.082f
         textAlign = android.graphics.Paint.Align.CENTER
     }
 
-    // Top: Date (e.g. "MAR 27 • FRI") - visible in both active and AOD
+    // Top: Date (e.g. "TUE OCT 27") - clearly visible above the clock numbers, 1:1 with COROS watch display
+    val cleanDateStr = dateStr.replace(",", "")
+    val datePaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        color = if (isAod) {
+            Color.LightGray.copy(alpha = 0.85f).toArgb()
+        } else {
+            c2.toArgb()
+        }
+        textSize = radius * 0.086f
+        textAlign = android.graphics.Paint.Align.CENTER
+    }
     drawContext.canvas.nativeCanvas.drawText(
-        dateStr,
+        cleanDateStr,
         center.x,
-        center.y - (radius * 0.86f),
-        compPaint
+        center.y - (radius * 0.70f),
+        datePaint
     )
 
-    // Peripheral sports metrics only display in active display mode to save OLED power in AOD
+    // Bottom complications matching COROS PACE Pro binary layout 1:1
     if (!isAod) {
-        // Left: Battery / Acute Load
-        drawContext.canvas.nativeCanvas.drawText(
-            "$acuteLoad AC",
-            center.x - (radius * 0.84f),
-            center.y + (radius * 0.02f),
-            compPaint
-        )
+        val compY = center.y + (radius * 0.856f)
+        val leftX = center.x - (radius * 0.28f)
+        val rightX = center.x + (radius * 0.28f)
+        val centerX = center.x
 
-        // Right: Threshold Pace
-        drawContext.canvas.nativeCanvas.drawText(
-            thresholdPace,
-            center.x + (radius * 0.84f),
-            center.y + (radius * 0.02f),
-            compPaint
-        )
-
-        // Bottom: Race Countdown
-        drawContext.canvas.nativeCanvas.drawText(
-            "${daysToRace}d RACE",
-            center.x,
-            center.y + (radius * 0.87f),
-            compPaint
-        )
+        when (config.complicationLayout) {
+            ComplicationLayout.STEPS_AND_BATTERY -> {
+                drawContext.canvas.nativeCanvas.drawText("1,087", leftX, compY, compPaint)
+                drawContext.canvas.nativeCanvas.drawText("94%", rightX, compY, compPaint)
+            }
+            ComplicationLayout.STEPS_AND_CALORIES -> {
+                drawContext.canvas.nativeCanvas.drawText("1,087", leftX, compY, compPaint)
+                drawContext.canvas.nativeCanvas.drawText("450 kcal", rightX, compY, compPaint)
+            }
+            ComplicationLayout.HR_AND_BATTERY -> {
+                drawContext.canvas.nativeCanvas.drawText("72 bpm", leftX, compY, compPaint)
+                drawContext.canvas.nativeCanvas.drawText("94%", rightX, compY, compPaint)
+            }
+            ComplicationLayout.HR_AND_CALORIES -> {
+                drawContext.canvas.nativeCanvas.drawText("72 bpm", leftX, compY, compPaint)
+                drawContext.canvas.nativeCanvas.drawText("450 kcal", rightX, compY, compPaint)
+            }
+            ComplicationLayout.BACK_BUTTON_CYCLE -> {
+                drawContext.canvas.nativeCanvas.drawText("⟳ 1,087 STEPS", centerX, compY, compPaint)
+            }
+            ComplicationLayout.MINIMALIST -> {
+                // Pure dial, no bottom complications
+            }
+        }
     }
 
     // Center 4 Interlocking Digits (Upright 90°, prominent black cutout border)
@@ -351,16 +269,21 @@ private fun DrawScope.drawPixelBubblyWatchFace(
     val d2 = if (minutesStr.length >= 2) minutesStr.substring(0, 1) else "0"
     val d3 = if (minutesStr.length >= 2) minutesStr.substring(1, 2) else minutesStr
 
+    // Exact horizontal and vertical spread calibrated to Pixel Watch Bold Digital
+    val clusterOffsetY = radius * 0.045f
+    val xSpread = radius * 0.235f
+    val ySpread = radius * 0.265f
+
     fun drawInterlockingDigit(
         char: String,
         fillColor: Color,
         xOff: Float,
         yOff: Float
     ) {
-        val textSizePx = radius * 0.88f
+        val textSizePx = radius * 0.85f
         val canvas = drawContext.canvas.nativeCanvas
         canvas.save()
-        canvas.translate(center.x + xOff, center.y + yOff)
+        canvas.translate(center.x + xOff, center.y + clusterOffsetY + yOff)
 
         // 1. Black cutout border and backing to cleanly separate and mask underlying digits
         val strokePaint = android.graphics.Paint().apply {
@@ -386,48 +309,51 @@ private fun DrawScope.drawPixelBubblyWatchFace(
 
         val yBaseline = -((strokePaint.descent() + strokePaint.ascent()) / 2f)
 
+        val glyphPath = android.graphics.Path()
+        val textMeasurePaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            this.typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
+            this.textSize = textSizePx
+            this.textAlign = android.graphics.Paint.Align.CENTER
+        }
+        textMeasurePaint.getTextPath(char, 0, char.length, 0f, yBaseline, glyphPath)
+
+        val cleanPath = android.graphics.Path()
+        val opSuccess = try {
+            cleanPath.op(glyphPath, glyphPath, android.graphics.Path.Op.UNION)
+        } catch (_: Exception) {
+            false
+        }
+        val targetPath = if (opSuccess && !cleanPath.isEmpty) cleanPath else glyphPath
+
         // Always draw the black contour separator first
-        canvas.drawText(char, 0f, yBaseline, strokePaint)
+        canvas.drawPath(targetPath, strokePaint)
 
         if (isAod) {
-            // In AOD / Dim mode: Mask interior with black, then draw glowing wireframe outline
-            canvas.drawText(char, 0f, yBaseline, solidBlackPaint)
+            // In AOD / Dim mode: Mask interior with black, then draw wireframe outline using the EXACT SAME FONT
+            canvas.drawPath(targetPath, solidBlackPaint)
 
             val aodOutlinePaint = android.graphics.Paint().apply {
                 isAntiAlias = true
-                typeface = bubblyAodFont ?: bubblyFont ?: Typeface.DEFAULT_BOLD
-                this.textSize = textSizePx
-                this.textAlign = android.graphics.Paint.Align.CENTER
-                if (bubblyAodFont != null) {
-                    this.style = android.graphics.Paint.Style.FILL
-                } else {
-                    this.style = android.graphics.Paint.Style.STROKE
-                    this.strokeWidth = radius * 0.040f
-                    this.strokeJoin = android.graphics.Paint.Join.ROUND
-                    this.strokeCap = android.graphics.Paint.Cap.ROUND
-                }
+                this.style = android.graphics.Paint.Style.STROKE
+                this.strokeWidth = radius * 0.038f
+                this.strokeJoin = android.graphics.Paint.Join.ROUND
+                this.strokeCap = android.graphics.Paint.Cap.ROUND
                 this.color = fillColor.toArgb()
             }
-            canvas.drawText(char, 0f, yBaseline, aodOutlinePaint)
+            canvas.drawPath(targetPath, aodOutlinePaint)
         } else {
             // In Active mode: Full solid vibrant fill
             val fillPaint = android.graphics.Paint().apply {
                 isAntiAlias = true
-                typeface = bubblyFont ?: Typeface.DEFAULT_BOLD
-                this.textSize = textSizePx
-                this.textAlign = android.graphics.Paint.Align.CENTER
                 this.style = android.graphics.Paint.Style.FILL
                 this.color = fillColor.toArgb()
             }
-            canvas.drawText(char, 0f, yBaseline, fillPaint)
+            canvas.drawPath(targetPath, fillPaint)
         }
 
         canvas.restore()
     }
-
-    // Exact horizontal and vertical spread calibrated to Pixel Watch Bold Digital
-    val xSpread = radius * 0.235f
-    val ySpread = radius * 0.275f
 
     // Layer 1: Top-Left (d0) - base layer
     drawInterlockingDigit(d0, c1, -xSpread, -ySpread)

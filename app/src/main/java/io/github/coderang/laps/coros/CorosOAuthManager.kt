@@ -46,16 +46,20 @@ object CorosOAuthManager {
                 }
             }
             return when (hostname.lowercase()) {
-                "mcpus.coros.com", "mcp.coros.com" -> listOf(
-                    InetAddress.getByAddress(hostname, byteArrayOf(50.toByte(), 18.toByte(), 183.toByte(), 11.toByte())),
+                "mcpus.coros.com", "mcp.coros.com", "api.coros.com", "teamapi.coros.com" -> listOf(
+                    InetAddress.getByAddress(hostname, byteArrayOf(52.toByte(), 52.toByte(), 241.toByte(), 237.toByte())),
                     InetAddress.getByAddress(hostname, byteArrayOf(13.toByte(), 52.toByte(), 95.toByte(), 79.toByte()))
                 )
-                "mcpeu.coros.com" -> listOf(
-                    InetAddress.getByAddress(hostname, byteArrayOf(63.toByte(), 181.toByte(), 159.toByte(), 175.toByte())),
-                    InetAddress.getByAddress(hostname, byteArrayOf(63.toByte(), 182.toByte(), 189.toByte(), 61.toByte())),
-                    InetAddress.getByAddress(hostname, byteArrayOf(3.toByte(), 126.toByte(), 38.toByte(), 48.toByte()))
+                "mcpeu.coros.com", "apieu.coros.com", "teameuapi.coros.com" -> listOf(
+                    InetAddress.getByAddress(hostname, byteArrayOf(3.toByte(), 120.toByte(), 109.toByte(), 75.toByte())),
+                    InetAddress.getByAddress(hostname, byteArrayOf(3.toByte(), 123.toByte(), 131.toByte(), 36.toByte())),
+                    InetAddress.getByAddress(hostname, byteArrayOf(63.toByte(), 181.toByte(), 159.toByte(), 175.toByte()))
                 )
-                "mcpcn.coros.com" -> listOf(
+                "teamsgapi.coros.com" -> listOf(
+                    InetAddress.getByAddress(hostname, byteArrayOf(8.toByte(), 219.toByte(), 145.toByte(), 70.toByte())),
+                    InetAddress.getByAddress(hostname, byteArrayOf(47.toByte(), 236.toByte(), 75.toByte(), 177.toByte()))
+                )
+                "mcpcn.coros.com", "apicn.coros.com", "teamcnapi.coros.com" -> listOf(
                     InetAddress.getByAddress(hostname, byteArrayOf(8.toByte(), 141.toByte(), 27.toByte(), 17.toByte()))
                 )
                 else -> Dns.SYSTEM.lookup(hostname)

@@ -23,6 +23,11 @@ object LapsRepository {
     private const val KEY_COROS_PASSWORD = "coros_password"
     private const val KEY_COROS_TOKEN = "coros_access_token"
     private const val KEY_COROS_REGION = "coros_region"
+    private const val KEY_WATCH_AUTH_USER_ID = "watch_auth_user_id"
+    private const val KEY_WATCH_AUTH_KEY_DER = "watch_auth_key_der"
+    private const val KEY_WATCH_AUTH_PROFILE = "watch_auth_profile"
+    private const val KEY_WATCH_AUTH_UNIT = "watch_auth_unit"
+    private const val KEY_WATCH_AUTH_SWITCH = "watch_auth_switch"
     private const val KEY_CALENDAR_ID = "selected_calendar_id"
     private const val KEY_RACE_NAME = "race_name"
     private const val KEY_RACE_DATE_MILLIS = "race_date_millis"
@@ -138,6 +143,49 @@ object LapsRepository {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_COROS_REGION, region.trim())
+            .apply()
+    }
+
+    fun saveWatchAuth(context: Context, auth: io.github.coderang.laps.coros.CorosMobileAuth.WatchAuthCredentials) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putLong(KEY_WATCH_AUTH_USER_ID, auth.accountUserId)
+            .putString(KEY_WATCH_AUTH_KEY_DER, auth.privateKeyDerBase64)
+            .putString(KEY_WATCH_AUTH_PROFILE, auth.bindProfileBase64)
+            .putInt(KEY_WATCH_AUTH_UNIT, auth.unit)
+            .putLong(KEY_WATCH_AUTH_SWITCH, auth.dataCollectSwitch)
+            .apply()
+    }
+
+    fun getWatchAuth(context: Context): io.github.coderang.laps.coros.CorosMobileAuth.WatchAuthCredentials? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val uId = prefs.getLong(KEY_WATCH_AUTH_USER_ID, 0L)
+        val keyDer = prefs.getString(KEY_WATCH_AUTH_KEY_DER, null)
+        val profile = prefs.getString(KEY_WATCH_AUTH_PROFILE, null)
+        if (uId != 0L && !keyDer.isNullOrBlank() && !profile.isNullOrBlank()) {
+            return io.github.coderang.laps.coros.CorosMobileAuth.WatchAuthCredentials(
+                accountUserId = uId,
+                privateKeyDerBase64 = keyDer,
+                bindProfileBase64 = profile,
+                unit = prefs.getInt(KEY_WATCH_AUTH_UNIT, 0),
+                dataCollectSwitch = prefs.getLong(KEY_WATCH_AUTH_SWITCH, 131342L)
+            )
+        }
+        return null
+    }
+
+    fun hasWatchAuth(context: Context): Boolean {
+        return getWatchAuth(context) != null
+    }
+
+    fun clearWatchAuth(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_WATCH_AUTH_USER_ID)
+            .remove(KEY_WATCH_AUTH_KEY_DER)
+            .remove(KEY_WATCH_AUTH_PROFILE)
+            .remove(KEY_WATCH_AUTH_UNIT)
+            .remove(KEY_WATCH_AUTH_SWITCH)
             .apply()
     }
 

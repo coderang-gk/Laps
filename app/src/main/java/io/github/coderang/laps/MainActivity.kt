@@ -3614,6 +3614,14 @@ private fun LapsOnboardingScreen(
                                     LapsRepository.saveCorosRegion(context, selectedRegion)
                                     LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                                     LapsRepository.setSetupCompleted(context, true)
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        try {
+                                            val wAuth = io.github.coderang.laps.coros.CorosMobileAuth.login(email.trim(), password.trim(), selectedRegion)
+                                            wAuth.onSuccess { creds ->
+                                                LapsRepository.saveWatchAuth(context, creds)
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
                                     Toast.makeText(context, "Connected to COROS Training Hub!", Toast.LENGTH_SHORT).show()
                                     onConnected()
                                 }.onFailure { err ->
@@ -3741,6 +3749,14 @@ private fun LapsSettingsScreen(
                                     LapsRepository.saveSelectedCalendarId(context, selectedCalendarId)
                                     LapsRepository.saveGeminiKey(context, geminiKey)
                                     LapsRepository.setSetupCompleted(context, true)
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        try {
+                                            val wAuth = io.github.coderang.laps.coros.CorosMobileAuth.login(email.trim(), password.trim(), selectedRegion)
+                                            wAuth.onSuccess { creds ->
+                                                LapsRepository.saveWatchAuth(context, creds)
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
                                     onSaved()
                                 }.onFailure { err ->
                                     Toast.makeText(context, "Login failed: ${err.message ?: "Invalid credentials"}", Toast.LENGTH_LONG).show()
